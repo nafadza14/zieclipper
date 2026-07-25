@@ -2,35 +2,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-const PROVIDERS = [
-  { id: 'anthropic', label: 'Claude' },
-  { id: 'deepseek', label: 'DeepSeek' },
-  { id: 'gemini', label: 'Gemini' },
-]
-
-const MODELS_BY_PROVIDER: Record<string, { id: string; label: string; desc: string }[]> = {
-  anthropic: [
-    { id: 'claude-opus-4-7',           label: 'Opus',    desc: 'Best quality' },
-    { id: 'claude-sonnet-4-6',         label: 'Sonnet',  desc: 'Balanced' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Haiku',   desc: 'Fastest' },
-  ],
-  deepseek: [
-    { id: 'deepseek-chat',     label: 'V3 Chat',     desc: 'Fast & smart' },
-    { id: 'deepseek-reasoner', label: 'R1 Reasoner', desc: 'Deep thinking' },
-  ],
-  gemini: [
-    // gemini-2.0-flash & gemini-1.5-pro were retired by Google (mid-2026) — using live models
-    { id: 'gemini-2.5-flash', label: '2.5 Flash', desc: 'Fastest' },
-    { id: 'gemini-2.5-pro',   label: '2.5 Pro',   desc: 'Best quality' },
-  ],
-}
-
-const DEFAULT_MODEL: Record<string, string> = {
-  anthropic: 'claude-sonnet-4-6',
-  deepseek: 'deepseek-chat',
-  gemini: 'gemini-2.5-flash',
-}
-
 const FEATURES = ['Word highlight', 'Auto subtitles', 'AI viral analysis', '9:16 export', 'Font presets', 'Emoji overlays']
 
 const STEPS: Record<string, { label: string; pct: number }> = {
@@ -43,18 +14,10 @@ const STEPS: Record<string, { label: string; pct: number }> = {
 export default function HomePage() {
   const router = useRouter()
   const [url, setUrl] = useState('')
-  const [provider, setProvider] = useState('anthropic')
-  const [model, setModel] = useState('claude-sonnet-4-6')
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<string | null>(null)
   const [pct, setPct] = useState(0)
   const [error, setError] = useState<string | null>(null)
-
-  function handleProviderClick(pid: string) {
-    setProvider(pid)
-    setModel(DEFAULT_MODEL[pid])
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!url.trim()) return
@@ -63,7 +26,7 @@ export default function HomePage() {
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), model, provider }),
+        body: JSON.stringify({ url: url.trim(), model: 'gpt-4o-mini', provider: 'sumopod' }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to start')
@@ -86,8 +49,6 @@ export default function HomePage() {
     }
     throw new Error('Timed out')
   }
-
-  const models = MODELS_BY_PROVIDER[provider]
 
   return (
     <main className="glow-bg relative flex flex-col items-center justify-center min-h-screen px-4 overflow-hidden">
@@ -124,43 +85,6 @@ export default function HomePage() {
                   placeholder="Paste YouTube URL…"
                   className="w-full bg-[#13131e] border border-white/[0.07] rounded-2xl pl-11 pr-5 py-4 text-white placeholder-[#413d52] focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/15 transition duration-200 text-base"
                 />
-              </div>
-
-              {/* Provider selector */}
-              <div className="flex gap-2">
-                {PROVIDERS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handleProviderClick(p.id)}
-                    className={`flex-1 py-2 px-3 rounded-xl border text-sm font-semibold transition duration-150 ${
-                      provider === p.id
-                        ? 'border-violet-500/50 bg-violet-500/10 text-violet-300 shadow-sm shadow-violet-500/10'
-                        : 'border-white/[0.07] bg-[#13131e] text-[#7c7490] hover:border-white/15 hover:text-white/70'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Model selector */}
-              <div className="flex gap-2">
-                {models.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setModel(m.id)}
-                    className={`flex-1 py-2.5 px-3 rounded-xl border text-sm font-medium transition duration-150 ${
-                      model === m.id
-                        ? 'border-violet-500/50 bg-violet-500/10 text-violet-300 shadow-sm shadow-violet-500/10'
-                        : 'border-white/[0.07] bg-[#13131e] text-[#7c7490] hover:border-white/15 hover:text-white/70'
-                    }`}
-                  >
-                    <div className="font-semibold">{m.label}</div>
-                    <div className="text-[10px] opacity-60 mt-0.5">{m.desc}</div>
-                  </button>
-                ))}
               </div>
 
               {/* CTA */}
