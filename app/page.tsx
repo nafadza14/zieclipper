@@ -105,23 +105,23 @@ export default function HomePage() {
       {/* Foreground content wrapper */}
       <div className="relative h-full w-full z-10 pointer-events-none">
         {/* Three giant staggered headline words */}
-        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] left-4 md:left-10 top-[18%] pointer-events-auto">
+        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] left-4 md:left-10 top-[12%] md:top-[14%] pointer-events-auto">
           clip
         </h1>
-        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] right-4 md:right-10 top-[38%] pointer-events-auto">
+        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] right-4 md:right-10 top-[26%] md:top-[30%] pointer-events-auto">
           your
         </h1>
-        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] left-[18%] md:left-[28%] top-[58%] pointer-events-auto">
+        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] left-4 md:left-[18%] top-[76%] md:top-[68%] pointer-events-auto">
           video
         </h1>
 
         {/* Description paragraph */}
-        <p className="absolute left-6 md:left-10 top-[46%] max-w-[240px] text-[15px] leading-snug text-white/90 pointer-events-auto">
+        <p className="absolute left-6 md:left-10 top-[40%] md:top-[48%] max-w-[200px] md:max-w-[240px] text-[15px] leading-snug text-white/90 pointer-events-auto">
           we slice your video with utmost care, empowering your reach everywhere
         </p>
 
         {/* Embedded Input Form directly on the landing page (centered) */}
-        <div className="absolute left-1/2 top-[72%] -translate-x-1/2 max-w-[320px] md:max-w-[420px] w-full px-4 pointer-events-auto space-y-3">
+        <div className="absolute left-1/2 top-[58%] md:top-1/2 -translate-x-1/2 md:-translate-y-1/2 max-w-[320px] md:max-w-[420px] w-full px-4 pointer-events-auto space-y-3 z-30">
           {!loading ? (
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="relative">
