@@ -120,8 +120,8 @@ export default function HomePage() {
           we slice your video with utmost care, empowering your reach everywhere
         </p>
 
-        {/* Embedded Input Form directly on the landing page */}
-        <div className="absolute left-6 md:left-10 top-[55%] max-w-[320px] md:max-w-[360px] w-full pointer-events-auto space-y-3">
+        {/* Embedded Input Form directly on the landing page (centered) */}
+        <div className="absolute left-1/2 top-[72%] -translate-x-1/2 max-w-[320px] md:max-w-[420px] w-full px-4 pointer-events-auto space-y-3">
           {!loading ? (
             <form onSubmit={handleSubmit} className="space-y-3">
               <div className="relative">
