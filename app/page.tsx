@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 const FEATURES = ['word highlight', 'auto subtitles', 'ai viral analysis', '9:16 export', 'font presets', 'emoji overlays']
@@ -18,7 +18,7 @@ export default function HomePage() {
   const [step, setStep] = useState<string | null>(null)
   const [pct, setPct] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [showModal, setShowModal] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -93,12 +93,12 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Right button */}
+        {/* Right button - focuses the input on landing page */}
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => inputRef.current?.focus()}
           className="bg-white text-black text-sm font-normal rounded-full px-6 py-3 hover:bg-neutral-200 transition-colors cursor-pointer"
         >
-          get started
+          start clipping
         </button>
       </nav>
 
@@ -119,6 +119,50 @@ export default function HomePage() {
         <p className="absolute left-6 md:left-10 top-[46%] max-w-[240px] text-[15px] leading-snug text-white/90 pointer-events-auto">
           we slice your video with utmost care, empowering your reach everywhere
         </p>
+
+        {/* Embedded Input Form directly on the landing page */}
+        <div className="absolute left-6 md:left-10 top-[55%] max-w-[320px] md:max-w-[360px] w-full pointer-events-auto space-y-3">
+          {!loading ? (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div className="relative">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="paste youtube url…"
+                  className="w-full bg-neutral-900/80 backdrop-blur border border-white/10 rounded-full px-5 py-3 text-white placeholder-neutral-500 focus:outline-none focus:border-white/30 text-sm transition-colors"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!url.trim()}
+                className="w-full py-3 rounded-full bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              >
+                find viral moments →
+              </button>
+              {error && (
+                <div className="bg-red-950/20 border border-red-900/30 rounded-2xl px-4 py-3 text-red-400 text-xs">
+                  {error}
+                </div>
+              )}
+            </form>
+          ) : (
+            <div className="bg-neutral-950/85 backdrop-blur border border-white/10 rounded-3xl p-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0" />
+                <span className="text-white text-sm font-medium">{step}</span>
+              </div>
+              <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-white rounded-full transition-all duration-700"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="text-neutral-500 text-xs text-center">this usually takes 30–60 seconds</p>
+            </div>
+          )}
+        </div>
 
         {/* Stat block - top-right */}
         <div className="absolute right-6 md:right-24 top-[14%] flex flex-col items-end pointer-events-auto">
@@ -159,66 +203,6 @@ export default function HomePage() {
           </span>
         ))}
       </div>
-
-      {/* Input Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-neutral-950 border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl space-y-6 relative">
-            <button
-              onClick={() => { if (!loading) setShowModal(false) }}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-white transition-colors text-xl p-2 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              disabled={loading}
-            >
-              ✕
-            </button>
-            <div className="space-y-2">
-              <h3 className="text-xl font-medium text-white tracking-tight">start clipping</h3>
-              <p className="text-sm text-neutral-400">paste your youtube url below to automatically find and cut viral moments using AI</p>
-            </div>
-            
-            {!loading ? (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="paste youtube url…"
-                    className="w-full bg-neutral-900 border border-white/10 rounded-full px-6 py-4 text-white placeholder-neutral-500 focus:outline-none focus:border-white/30 text-sm transition-colors"
-                    autoFocus
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={!url.trim()}
-                  className="w-full py-4 rounded-full bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  find viral moments →
-                </button>
-                {error && (
-                  <div className="bg-red-950/20 border border-red-900/30 rounded-2xl px-4 py-3 text-red-400 text-xs">
-                    {error}
-                  </div>
-                )}
-              </form>
-            ) : (
-              <div className="py-6 space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0" />
-                  <span className="text-white text-sm font-medium">{step}</span>
-                </div>
-                <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-white rounded-full transition-all duration-700"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <p className="text-neutral-500 text-xs text-center">this usually takes 30–60 seconds</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </section>
   )
 }
