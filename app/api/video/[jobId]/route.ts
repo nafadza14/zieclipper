@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import { getJob } from '@/server/job-manager'
 import { runFFmpeg } from '@/server/ffmpeg-processor'
 import { buildSegmentArgs } from '@/lib/ffmpeg-commands'
 
-const TMP_DIR = path.join(process.cwd(), 'tmp', 'jobs')
+const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params

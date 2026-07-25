@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { nanoid } from 'nanoid'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 import { getJob, createExportJob, updateExportJob } from '@/server/job-manager'
 import { runFFmpeg } from '@/server/ffmpeg-processor'
 import { buildExportArgs } from '@/lib/ffmpeg-commands'
 import { generateAssFile } from '@/lib/ass-generator'
 import type { EditorSettings, SubtitleChunk } from '@/store/types'
 
-const TMP_DIR = path.join(process.cwd(), 'tmp', 'jobs')
+const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
 
 export async function GET(req: NextRequest) {
   const exportId = new URL(req.url).searchParams.get('id')

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { nanoid } from 'nanoid'
 import path from 'path'
+import os from 'os'
 import { downloadVideo } from '@/server/ytdlp-service'
 import { createJob, updateJob } from '@/server/job-manager'
 import { extractVideoId } from '@/lib/youtube'
 import type { SubtitleOption } from '@/store/types'
 
-const TMP_DIR = path.join(process.cwd(), 'tmp', 'jobs')
+const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
 
 export async function POST(req: NextRequest) {
   const { url, model, provider } = await req.json()

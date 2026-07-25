@@ -1,9 +1,10 @@
 import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 
 const YTDLP = process.env.YTDLP_PATH || 'yt-dlp'
-const TMP_ROOT = path.join(process.cwd(), 'tmp')
+const TMP_ROOT = path.join(os.tmpdir(), 'zieclipper')
 export const COOKIES_FILE = path.join(TMP_ROOT, 'yt-cookies.txt')
 
 export interface DownloadResult {
