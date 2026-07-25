@@ -14,42 +14,47 @@ export interface DownloadResult {
   vttFiles: Record<string, string>  // lang code → absolute file path
 }
 
+import { ensureBinaries } from './binaries'
+
 export function downloadVideo(
   url: string,
   outputDir: string,
   onProgress: (pct: number, status: string) => void,
 ): Promise<DownloadResult> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(outputDir, { recursive: true })
-    fs.mkdirSync(TMP_ROOT, { recursive: true })
+  return new Promise(async (resolve, reject) => {
+    try {
+      const { ytdlp } = await ensureBinaries()
 
-    const outputTemplate = path.join(outputDir, 'source.%(ext)s')
+      fs.mkdirSync(outputDir, { recursive: true })
+      fs.mkdirSync(TMP_ROOT, { recursive: true })
 
-    const args = [
-      url,
-      '--format', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]',
-      '--merge-output-format', 'mp4',
-      '--write-info-json',
-      '--write-subs',
-      '--write-auto-subs',
-      '--sub-langs', 'all',
-      '--sub-format', 'vtt',
-      // Use cookies file if the user has exported one (see README for instructions)
-      ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
-      '--extractor-retries', '3',
-      '--sleep-requests', '1',
-      '--ignore-errors',
-      '--no-playlist',
-      '--output', outputTemplate,
-      '--newline',
-    ]
+      const outputTemplate = path.join(outputDir, 'source.%(ext)s')
 
-    const proc = spawn(YTDLP, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
+      const args = [
+        url,
+        '--format', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        '--merge-output-format', 'mp4',
+        '--write-info-json',
+        '--write-subs',
+        '--write-auto-subs',
+        '--sub-langs', 'all',
+        '--sub-format', 'vtt',
+        // Use cookies file if the user has exported one (see README for instructions)
+        ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
+        '--extractor-retries', '3',
+        '--sleep-requests', '1',
+        '--ignore-errors',
+        '--no-playlist',
+        '--output', outputTemplate,
+        '--newline',
+      ]
 
-    let stderrBuf = ''
+      const proc = spawn(ytdlp, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+
+      let stderrBuf = ''
 
     proc.stdout.on('data', (data: Buffer) => {
       const text = data.toString()
@@ -111,5 +116,8 @@ export function downloadVideo(
     })
 
     proc.on('error', (err) => reject(new Error(`yt-dlp spawn error: ${err.message}`)))
+    } catch (err: any) {
+      reject(err)
+    }
   })
 }
