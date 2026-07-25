@@ -39,6 +39,11 @@ def call_tool(
             api_key=os.environ['DEEPSEEK_API_KEY'],
             base_url='https://api.deepseek.com',
         )
+    elif provider == 'sumopod':
+        client = OpenAI(
+            api_key=os.environ.get('SUMOPOD_API_KEY', 'sk-LH238LuYeE77a-8IVxxQdg'),
+            base_url='https://ai.sumopod.com/v1',
+        )
     else:  # gemini
         client = OpenAI(
             api_key=os.environ['GEMINI_API_KEY'],
