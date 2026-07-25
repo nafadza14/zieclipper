@@ -1,26 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
-  --bg: #07070b;
+  --bg: #000000;
   --surface: #0d0d16;
   --surface-2: #13131e;
   --surface-3: #191926;
   --border: rgba(255, 255, 255, 0.06);
   --border-md: rgba(255, 255, 255, 0.10);
-  --border-accent: rgba(139, 92, 246, 0.35);
-  --text: #ede9fe;
+  --border-accent: rgba(255, 255, 255, 0.35);
+  --text: #ffffff;
   --text-2: #7c7490;
   --text-3: #413d52;
-  --accent: #7c3aed;
-  --accent-2: #a78bfa;
+}
+
+html, body {
+  height: 100%;
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Helvetica, sans-serif;
+  background: #000000;
+  color: #ffffff;
+  font-family: 'Readex Pro', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.hero-title {
+  letter-spacing: -0.04em;
+  line-height: 0.95;
 }
 
 * { box-sizing: border-box; }
