@@ -115,12 +115,13 @@ export default function HomePage() {
           video
         </h1>
 
+        {/* Description paragraph */}
+        <p className="absolute left-6 md:left-10 top-[40%] md:top-[48%] max-w-[200px] md:max-w-[240px] text-[15px] leading-snug text-white/90 pointer-events-auto">
+          we slice your video with utmost care, empowering your reach everywhere
+        </p>
+
         {/* Embedded Input Form directly on the landing page (centered) */}
         <div className="absolute left-1/2 top-[58%] md:top-1/2 -translate-x-1/2 md:-translate-y-1/2 max-w-[400px] md:max-w-[640px] w-full px-4 pointer-events-auto space-y-4 z-30 text-center">
-          {/* Description paragraph directly above the input column */}
-          <p className="text-[15px] md:text-[17px] leading-relaxed text-white/90 max-w-[360px] md:max-w-[480px] mx-auto mb-2">
-            we slice your video with utmost care, empowering your reach everywhere
-          </p>
 
           {!loading ? (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -141,6 +142,19 @@ export default function HomePage() {
               >
                 find viral moments →
               </button>
+
+              {/* Feature pills under the button */}
+              <div className="flex flex-wrap gap-2 justify-center max-w-lg mx-auto pt-4 pointer-events-auto">
+                {FEATURES.map((f) => (
+                  <span
+                    key={f}
+                    className="px-3 py-1 bg-white/[0.03] border border-white/[0.06] rounded-full text-xs text-[#7c7490]"
+                  >
+                    {f}
+                  </span>
+                ))}
+              </div>
+
               {error && (
                 <div className="bg-red-950/20 border border-red-900/30 rounded-2xl px-4 py-3 text-red-400 text-xs">
                   {error}
@@ -192,17 +206,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Feature pills bottom layer */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex flex-wrap gap-2 justify-center max-w-lg px-4 pointer-events-auto">
-        {FEATURES.map((f) => (
-          <span
-            key={f}
-            className="px-3 py-1 bg-white/[0.03] border border-white/[0.06] rounded-full text-xs text-[#7c7490]"
-          >
-            {f}
-          </span>
-        ))}
-      </div>
     </section>
   )
 }
