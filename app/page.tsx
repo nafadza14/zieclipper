@@ -115,15 +115,15 @@ export default function HomePage() {
           video
         </h1>
 
-        {/* Description paragraph */}
-        <p className="absolute left-6 md:left-10 top-[40%] md:top-[48%] max-w-[200px] md:max-w-[240px] text-[15px] leading-snug text-white/90 pointer-events-auto">
-          we slice your video with utmost care, empowering your reach everywhere
-        </p>
-
         {/* Embedded Input Form directly on the landing page (centered) */}
-        <div className="absolute left-1/2 top-[58%] md:top-1/2 -translate-x-1/2 md:-translate-y-1/2 max-w-[320px] md:max-w-[420px] w-full px-4 pointer-events-auto space-y-3 z-30">
+        <div className="absolute left-1/2 top-[58%] md:top-1/2 -translate-x-1/2 md:-translate-y-1/2 max-w-[400px] md:max-w-[640px] w-full px-4 pointer-events-auto space-y-4 z-30 text-center">
+          {/* Description paragraph directly above the input column */}
+          <p className="text-[15px] md:text-[17px] leading-relaxed text-white/90 max-w-[360px] md:max-w-[480px] mx-auto mb-2">
+            we slice your video with utmost care, empowering your reach everywhere
+          </p>
+
           {!loading ? (
-            <form onSubmit={handleSubmit} className="space-y-3">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="relative">
                 <input
                   ref={inputRef}
@@ -131,13 +131,13 @@ export default function HomePage() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="paste youtube url…"
-                  className="w-full bg-neutral-900/80 backdrop-blur border border-white/10 rounded-full px-5 py-3 text-white placeholder-neutral-500 focus:outline-none focus:border-white/30 text-sm transition-colors"
+                  className="w-full bg-white rounded-full px-8 py-4 md:py-5 text-black placeholder-neutral-400 focus:outline-none text-base md:text-lg transition-colors shadow-2xl"
                 />
               </div>
               <button
                 type="submit"
                 disabled={!url.trim()}
-                className="w-full py-3 rounded-full bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full py-3.5 md:py-4 rounded-full bg-white text-black font-semibold text-base md:text-lg hover:bg-neutral-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-lg"
               >
                 find viral moments →
               </button>
