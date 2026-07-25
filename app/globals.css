@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #07070b;
+  --surface: #0d0d16;
+  --surface-2: #13131e;
+  --surface-3: #191926;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-md: rgba(255, 255, 255, 0.10);
+  --border-accent: rgba(139, 92, 246, 0.35);
+  --text: #ede9fe;
+  --text-2: #7c7490;
+  --text-3: #413d52;
+  --accent: #7c3aed;
+  --accent-2: #a78bfa;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+
+::selection {
+  background: rgba(124, 58, 237, 0.35);
+  color: #fff;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+
+/* Glow ambient used on hero */
+.glow-bg::before {
+  content: '';
+  position: fixed;
+  top: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 900px;
+  height: 700px;
+  background: radial-gradient(ellipse, rgba(109,40,217,0.18) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
