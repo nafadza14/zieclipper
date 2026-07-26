@@ -1,6 +1,8 @@
 'use client'
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import { supabase } from '@/lib/supabase'
 
 const FEATURES = ['word highlight', 'auto subtitles', 'ai viral analysis', '9:16 export', 'font presets', 'emoji overlays']
 
@@ -13,6 +15,7 @@ const STEPS: Record<string, { label: string; pct: number }> = {
 
 export default function HomePage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<string | null>(null)
@@ -97,13 +100,39 @@ export default function HomePage() {
           ))}
         </div>
 
-        {/* Right button - focuses the input on landing page */}
-        <button
-          onClick={() => inputRef.current?.focus()}
-          className="bg-white text-black text-sm font-normal rounded-full px-6 py-3 hover:bg-neutral-200 transition-colors cursor-pointer"
-        >
-          start clipping
-        </button>
+        {/* Right button & Auth status */}
+        <div className="flex items-center gap-3">
+          {user ? (
+            <>
+              <span className="hidden sm:inline text-xs text-neutral-400 font-medium font-mono">{user.email}</span>
+              <button
+                onClick={() => supabase.auth.signOut()}
+                className="bg-neutral-900/80 border border-white/10 hover:border-white/30 text-white text-xs font-semibold rounded-full px-4 py-2.5 transition cursor-pointer"
+              >
+                sign out
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => router.push('/auth')}
+              className="bg-neutral-900/80 border border-white/10 hover:border-white/30 text-white text-xs font-semibold rounded-full px-4 py-2.5 transition cursor-pointer"
+            >
+              sign in
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (user) {
+                inputRef.current?.focus()
+              } else {
+                router.push('/auth')
+              }
+            }}
+            className="bg-white text-black text-sm font-semibold rounded-full px-6 py-3 hover:bg-neutral-200 transition-colors cursor-pointer shadow-lg"
+          >
+            start clipping
+          </button>
+        </div>
       </nav>
 
       {/* Foreground content wrapper */}

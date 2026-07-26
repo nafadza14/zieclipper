@@ -9,6 +9,7 @@ import { EmojiPanel } from '@/components/editor/panels/EmojiPanel'
 import { CropPanel } from '@/components/editor/panels/CropPanel'
 import { ExportPanel } from '@/components/editor/panels/ExportPanel'
 import type { Job } from '@/store/types'
+import { useAuth } from '@/hooks/useAuth'
 
 const TABS = [
   { id: 'subtitles', label: 'Subtitles', icon: '⏱' },
@@ -22,6 +23,7 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
   const { jobId, clipIndex: clipIndexStr } = use(params)
   const clipIndex = parseInt(clipIndexStr)
   const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
 
   const [activeTab, setActiveTab] = useState('subtitles')
   const [loading, setLoading] = useState(true)
@@ -30,27 +32,38 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
   const { setJob, clip, subtitleChunks, settings, updateSubtitleChunkText } = useEditorStore()
 
   useEffect(() => {
-    fetch(`/api/jobs/${jobId}`)
-      .then((r) => r.json())
-      .then((job: Job) => {
-        if (!job.clips || !job.transcript) throw new Error('Job not ready')
-        const c = job.clips[clipIndex]
-        if (!c) throw new Error('Clip not found')
-        const clipTranscript = (job.transcript || []).filter(
-          (w) => w.end >= c.start_time - 15 && w.start <= c.end_time + 15
-        )
-        setJob(jobId, clipIndex, c, clipTranscript)
-        setLoading(false)
-      })
-      .catch((e) => { setError(e.message); setLoading(false) })
-  }, [jobId, clipIndex, setJob])
+    if (!authLoading && !user) {
+      router.push(`/auth?next=${encodeURIComponent(`/editor/${jobId}/${clipIndex}`)}`)
+      return
+    }
 
-  if (loading) {
+    if (user) {
+      fetch(`/api/jobs/${jobId}`)
+        .then((r) => r.json())
+        .then((job: Job) => {
+          if (!job.clips || !job.transcript) throw new Error('Job not ready')
+          const c = job.clips[clipIndex]
+          if (!c) throw new Error('Clip not found')
+          const clipTranscript = (job.transcript || []).filter(
+            (w) => w.end >= c.start_time - 15 && w.start <= c.end_time + 15
+          )
+          setJob(jobId, clipIndex, c, clipTranscript)
+          setLoading(false)
+        })
+        .catch((e) => { setError(e.message); setLoading(false) })
+    }
+  }, [jobId, clipIndex, setJob, user, authLoading, router])
+
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-black">
         <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
       </div>
     )
+  }
+
+  if (!user) {
+    return null
   }
 
   if (error || !clip) {

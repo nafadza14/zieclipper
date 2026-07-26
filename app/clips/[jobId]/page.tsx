@@ -4,10 +4,12 @@ import { useRouter } from 'next/navigation'
 import { ClipCard } from '@/components/clips/ClipCard'
 import type { Job } from '@/store/types'
 import { formatDuration } from '@/lib/youtube'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function ClipsPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = use(params)
   const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
   const [job, setJob] = useState<Job | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -15,15 +17,22 @@ export default function ClipsPage({ params }: { params: Promise<{ jobId: string 
   const [retranscribing, setRetranscribing] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/jobs/${jobId}`)
-      .then((r) => r.json())
-      .then((j: Job) => {
-        setJob(j)
-        setSelectedLang(j.activeSubtitleLang ?? j.availableSubtitles?.[0]?.code ?? '')
-        setLoading(false)
-      })
-      .catch((e) => { setError(e.message); setLoading(false) })
-  }, [jobId])
+    if (!authLoading && !user) {
+      router.push(`/auth?next=${encodeURIComponent(`/clips/${jobId}`)}`)
+      return
+    }
+
+    if (user) {
+      fetch(`/api/jobs/${jobId}`)
+        .then((r) => r.json())
+        .then((j: Job) => {
+          setJob(j)
+          setSelectedLang(j.activeSubtitleLang ?? j.availableSubtitles?.[0]?.code ?? '')
+          setLoading(false)
+        })
+        .catch((e) => { setError(e.message); setLoading(false) })
+    }
+  }, [jobId, user, authLoading, router])
 
   async function switchSubtitle(lang: string) {
     if (lang === selectedLang || retranscribing) return
@@ -46,12 +55,16 @@ export default function ClipsPage({ params }: { params: Promise<{ jobId: string 
     }
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-black">
         <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
       </div>
     )
+  }
+
+  if (!user) {
+    return null
   }
 
   if (error || !job) {
