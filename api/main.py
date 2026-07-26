@@ -24,6 +24,16 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/debug-env")
+def debug_env():
+    return {
+        "SUMOPOD_API_KEY": os.environ.get("SUMOPOD_API_KEY"),
+        "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY"),
+        "DEEPSEEK_API_KEY": os.environ.get("DEEPSEEK_API_KEY"),
+        "GEMINI_API_KEY": os.environ.get("GEMINI_API_KEY"),
+    }
+
+
 @app.post("/available-transcripts", response_model=AvailableTranscriptsResponse)
 def available_transcripts_endpoint(req: AvailableTranscriptsRequest):
     try:
@@ -47,7 +57,13 @@ def transcript_endpoint(req: TranscriptRequest):
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze_endpoint(req: AnalyzeRequest):
     try:
-        clips = analyze_transcript(req.transcript, req.model, language=req.language, provider=req.provider)
+        clips = analyze_transcript(
+            req.transcript,
+            req.model,
+            language=req.language,
+            provider=req.provider,
+            target_duration=req.target_duration
+        )
         return AnalyzeResponse(clips=clips)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

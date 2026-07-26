@@ -108,6 +108,9 @@ export interface CropSettings {
   width: number
   background: CropBackground
   backgroundColor: string
+  style: 'fill' | 'fit'
+  startOffset: number
+  endOffset: number
 }
 
 export interface TrimSettings {

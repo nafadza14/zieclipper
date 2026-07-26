@@ -28,7 +28,11 @@ export default function HomePage() {
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.trim(), model: 'gpt-4o-mini', provider: 'sumopod' }),
+        body: JSON.stringify({
+          url: url.trim(),
+          model: 'gpt-4o-mini',
+          provider: 'sumopod',
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'failed to start')
@@ -105,23 +109,23 @@ export default function HomePage() {
       {/* Foreground content wrapper */}
       <div className="relative h-full w-full z-10 pointer-events-none">
         {/* Three giant staggered headline words */}
-        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] left-4 md:left-10 top-[12%] md:top-[14%] pointer-events-auto">
+        <h1 className="hero-title absolute text-white font-medium text-[12vw] md:text-[13vw] left-4 md:left-10 top-[12%] md:top-[14%] pointer-events-auto">
           clip
         </h1>
-        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] right-4 md:right-10 top-[26%] md:top-[30%] pointer-events-auto">
+        <h1 className="hero-title absolute text-white font-medium text-[12vw] md:text-[13vw] right-4 md:right-10 top-[24%] md:top-[30%] pointer-events-auto">
           your
         </h1>
-        <h1 className="hero-title absolute text-white font-medium text-[14vw] md:text-[13vw] left-4 md:left-[18%] top-[76%] md:top-[68%] pointer-events-auto">
+        <h1 className="hero-title absolute text-white font-medium text-[12vw] md:text-[13vw] left-4 md:left-[18%] top-[84%] md:top-[68%] pointer-events-auto">
           video
         </h1>
 
         {/* Description paragraph */}
-        <p className="absolute left-6 md:left-10 top-[40%] md:top-[48%] max-w-[200px] md:max-w-[240px] text-[15px] leading-snug text-white/90 pointer-events-auto">
+        <p className="absolute left-6 md:left-10 top-[35%] md:top-[48%] max-w-[180px] md:max-w-[240px] text-xs md:text-[15px] leading-snug text-white/90 pointer-events-auto">
           we slice your video with utmost care, empowering your reach everywhere
         </p>
 
         {/* Embedded Input Form directly on the landing page (centered) */}
-        <div className="absolute left-1/2 top-[58%] md:top-1/2 -translate-x-1/2 md:-translate-y-1/2 max-w-[400px] md:max-w-[640px] w-full px-4 pointer-events-auto space-y-4 z-30 text-center">
+        <div className="absolute left-1/2 top-[53%] md:top-1/2 -translate-x-1/2 md:-translate-y-1/2 max-w-[90%] sm:max-w-[400px] md:max-w-[640px] w-full px-4 pointer-events-auto space-y-4 z-30 text-center">
 
           {!loading ? (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -135,6 +139,7 @@ export default function HomePage() {
                   className="w-full bg-white rounded-full px-8 py-4 md:py-5 text-black placeholder-neutral-400 focus:outline-none text-base md:text-lg transition-colors shadow-2xl"
                 />
               </div>
+
               <button
                 type="submit"
                 disabled={!url.trim()}
@@ -148,7 +153,7 @@ export default function HomePage() {
                 {FEATURES.map((f) => (
                   <span
                     key={f}
-                    className="px-3 py-1 bg-white/[0.03] border border-white/[0.06] rounded-full text-xs text-[#7c7490]"
+                    className="px-3 py-1 bg-white/[0.03] border border-white/[0.06] rounded-full text-xs text-white"
                   >
                     {f}
                   </span>
@@ -179,30 +184,30 @@ export default function HomePage() {
         </div>
 
         {/* Stat block - top-right */}
-        <div className="absolute right-6 md:right-24 top-[14%] flex flex-col items-end pointer-events-auto">
-          <div className="flex items-center gap-3 justify-end">
+        <div className="absolute right-6 md:right-24 top-[12%] md:top-[14%] flex flex-col items-end pointer-events-auto">
+          <div className="flex items-center gap-2 md:gap-3 justify-end">
             <span className="hidden md:block h-px w-24 bg-white/40 rotate-[20deg]" />
-            <span className="text-4xl md:text-5xl font-medium tracking-tight text-white">+65k</span>
+            <span className="text-2xl md:text-5xl font-medium tracking-tight text-white">+65k</span>
           </div>
-          <span className="text-xs md:text-sm text-white/70 mt-1 text-right">videos clipped</span>
+          <span className="text-[10px] md:text-sm text-white/70 mt-0.5 md:mt-1 text-right">videos clipped</span>
         </div>
 
         {/* Stat block - bottom-left */}
-        <div className="absolute left-6 md:left-20 bottom-20 md:bottom-24 flex flex-col items-start pointer-events-auto">
-          <div className="flex items-center gap-3">
-            <span className="text-4xl md:text-5xl font-medium tracking-tight text-white">+1.5b</span>
+        <div className="absolute left-6 md:left-20 bottom-[14%] md:bottom-24 flex flex-col items-start pointer-events-auto">
+          <div className="flex items-center gap-2 md:gap-3">
+            <span className="text-2xl md:text-5xl font-medium tracking-tight text-white">+1.5b</span>
             <span className="hidden md:block h-px w-24 bg-white/40 -rotate-[20deg]" />
           </div>
-          <span className="text-xs md:text-sm text-white/70 mt-1">views generated</span>
+          <span className="text-[10px] md:text-sm text-white/70 mt-0.5 md:mt-1">views generated</span>
         </div>
 
         {/* Stat block - bottom-right */}
-        <div className="absolute right-6 md:right-20 bottom-16 md:bottom-20 flex flex-col items-end pointer-events-auto">
-          <div className="flex items-center gap-3 justify-end">
+        <div className="absolute right-6 md:right-20 bottom-[6%] md:bottom-20 flex flex-col items-end pointer-events-auto">
+          <div className="flex items-center gap-2 md:gap-3 justify-end">
             <span className="hidden md:block h-px w-24 bg-white/40 -rotate-[20deg]" />
-            <span className="text-4xl md:text-5xl font-medium tracking-tight text-white">+300k</span>
+            <span className="text-2xl md:text-5xl font-medium tracking-tight text-white">+300k</span>
           </div>
-          <span className="text-xs md:text-sm text-white/70 mt-1 text-right">downloads</span>
+          <span className="text-[10px] md:text-sm text-white/70 mt-0.5 md:mt-1 text-right">downloads</span>
         </div>
       </div>
 

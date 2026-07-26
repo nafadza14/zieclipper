@@ -109,7 +109,7 @@ export function ExportPanel() {
           </div>
           <div className="h-2 bg-[#222] rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-purple-600 to-purple-400 transition-all duration-500"
+              className="h-full bg-gradient-to-r from-white to-neutral-400 transition-all duration-500"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -137,7 +137,7 @@ export function ExportPanel() {
         <button
           onClick={startExport}
           disabled={starting || isProcessing}
-          className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm transition"
+          className="w-full py-3 rounded-xl bg-white hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition"
         >
           {starting ? 'Starting...' : isProcessing ? `Exporting ${progress}%...` : 'Export Short'}
         </button>
@@ -169,7 +169,7 @@ export function ExportPanel() {
                     onClick={() => setMetaLang(lang)}
                     className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition ${
                       metaLang === lang
-                        ? 'border-purple-500/50 bg-purple-500/10 text-purple-300'
+                        ? 'border-white bg-white/10 text-white font-medium'
                         : 'border-[#2a2a2a] text-gray-500 hover:text-gray-300 hover:border-[#444]'
                     }`}
                   >
@@ -179,7 +179,7 @@ export function ExportPanel() {
               </div>
               <button
                 onClick={generateMetadata}
-                className="w-full py-3 rounded-xl bg-[#1a1a1a] hover:bg-[#222] border border-[#2a2a2a] hover:border-purple-500/50 text-white text-sm font-medium transition flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-[#1a1a1a] hover:bg-[#222] border border-[#2a2a2a] hover:border-white/50 text-white text-sm font-medium transition flex items-center justify-center gap-2"
               >
                 <span>✨</span> Generate Title, Caption & Tags
               </button>
@@ -188,7 +188,7 @@ export function ExportPanel() {
 
           {generatingMeta && (
             <div className="flex items-center gap-3 bg-[#141414] rounded-xl px-4 py-3 border border-[#2a2a2a]">
-              <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin shrink-0" />
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0" />
               <span className="text-xs text-gray-400">Generating metadata...</span>
             </div>
           )}
@@ -251,7 +251,7 @@ export function ExportPanel() {
                       onClick={() => setMetaLang(lang)}
                       className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition ${
                         metaLang === lang
-                          ? 'border-purple-500/50 bg-purple-500/10 text-purple-300'
+                          ? 'border-white bg-white/10 text-white font-medium'
                           : 'border-[#2a2a2a] text-gray-500 hover:text-gray-300 hover:border-[#444]'
                       }`}
                     >

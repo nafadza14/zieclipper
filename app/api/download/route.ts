@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { nanoid } from 'nanoid'
 import path from 'path'
 import os from 'os'
-import { downloadVideo } from '@/server/ytdlp-service'
+import { downloadSubtitlesAndMetadata } from '@/server/ytdlp-service'
 import { createJob, updateJob } from '@/server/job-manager'
 import { extractVideoId } from '@/lib/youtube'
 import type { SubtitleOption } from '@/store/types'
@@ -10,7 +10,7 @@ import type { SubtitleOption } from '@/store/types'
 const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
 
 export async function POST(req: NextRequest) {
-  const { url, model, provider } = await req.json()
+  const { url, model, provider, target_duration, language } = await req.json()
 
   if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 })
 
@@ -21,21 +21,48 @@ export async function POST(req: NextRequest) {
   const outputDir = path.join(TMP_DIR, jobId)
 
   createJob(jobId, url, model || 'claude-sonnet-4-6', provider || 'anthropic')
+  updateJob(jobId, { status: 'transcribing' })
 
-  downloadVideo(url, outputDir, (pct, status) => {
-    updateJob(jobId, { status: status === 'done' ? 'transcribing' : 'downloading' })
-  }).then(async ({ videoPath, title, duration, vttFiles }) => {
-    updateJob(jobId, { videoPath, title, duration, status: 'transcribing' })
+  downloadSubtitlesAndMetadata(url, outputDir).then(async ({ title, duration, vttFiles }) => {
+    updateJob(jobId, { title, duration })
 
     // Build availableSubtitles: merge VTT files with YouTube API transcript list
     const availableSubtitles = await buildAvailableSubtitles(videoId, vttFiles)
     updateJob(jobId, { availableSubtitles })
 
-    // Use first VTT as default for initial transcription
-    const firstVtt = Object.values(vttFiles)[0]
-    const firstLang = Object.keys(vttFiles)[0]
+    // Select the best default subtitle language: prefer Indonesian, then English, then others.
+    let defaultLang = Object.keys(vttFiles)[0]
+    let defaultVtt = Object.values(vttFiles)[0]
 
-    return fetchTranscriptAndAnalyze(jobId, videoId, videoPath, model, provider || 'anthropic', firstVtt, firstLang, 'English')
+    const priorityLangs = ['id', 'en', 'ms']
+    for (const pl of priorityLangs) {
+      const matchKey = Object.keys(vttFiles).find(
+        (k) => k.toLowerCase() === pl || k.toLowerCase().startsWith(pl + '-')
+      )
+      if (matchKey) {
+        defaultLang = matchKey
+        defaultVtt = vttFiles[matchKey]
+        break
+      }
+    }
+
+    // Determine target output language based on the chosen transcript language
+    let targetLang = 'English'
+    if (defaultLang && (defaultLang.toLowerCase().startsWith('id') || defaultLang.toLowerCase().startsWith('ms'))) {
+      targetLang = 'Indonesian'
+    }
+
+    return fetchTranscriptAndAnalyze(
+      jobId,
+      videoId,
+      undefined,
+      model,
+      provider || 'anthropic',
+      defaultVtt,
+      defaultLang,
+      language || targetLang,
+      target_duration || 'auto'
+    )
   }).catch((err) => {
     updateJob(jobId, { status: 'error', error: err.message })
   })
@@ -114,6 +141,7 @@ async function fetchTranscriptAndAnalyze(
   vttPath?: string,
   preferredLang?: string,
   language?: string,
+  targetDuration?: string,
 ) {
   const pythonUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:8002'
 
@@ -140,10 +168,21 @@ async function fetchTranscriptAndAnalyze(
     const aRes = await fetch(`${pythonUrl}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript, model, provider, video_duration: 0, language: language ?? 'English' }),
+      body: JSON.stringify({
+        transcript,
+        model,
+        provider,
+        video_duration: 0,
+        language: language ?? 'English',
+        target_duration: targetDuration ?? 'auto'
+      }),
     })
 
-    if (!aRes.ok) throw new Error(`Analysis service error: ${aRes.statusText}`)
+    if (!aRes.ok) {
+      let detail = aRes.statusText
+      try { detail = (await aRes.json()).detail ?? detail } catch {}
+      throw new Error(`Analysis service error: ${detail}`)
+    }
     const { clips } = await aRes.json()
 
     updateJob(jobId, { clips, status: 'ready' })

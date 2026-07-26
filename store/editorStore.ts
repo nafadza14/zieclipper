@@ -22,6 +22,7 @@ interface EditorState {
   updateEmoji: (partial: Partial<EmojiSettings>) => void
   updateCrop: (partial: Partial<CropSettings>) => void
   updateTrim: (partial: Partial<TrimSettings>) => void
+  updateSubtitleChunkText: (id: number, text: string) => void
   setSubtitleOffset: (ms: number) => void
   setEmojiOverride: (chunkIdx: number, emoji: string) => void
   recomputeChunks: () => void
@@ -86,6 +87,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       settings: { ...state.settings, trim: { ...state.settings.trim, ...partial } },
     }))
+  },
+
+  updateSubtitleChunkText: (id, text) => {
+    set((state) => {
+      const subtitleChunks = state.subtitleChunks.map((chunk) => {
+        if (chunk.id !== id) return chunk
+
+        // Split new text by whitespace
+        const newWordsText = text.trim().split(/\s+/)
+        const origWords = chunk.words
+
+        let updatedWords = []
+        if (newWordsText.length === origWords.length) {
+          updatedWords = origWords.map((w, idx) => ({
+            ...w,
+            word: newWordsText[idx]
+          }))
+        } else {
+          const chunkDur = chunk.chunkEnd - chunk.chunkStart
+          const wordDur = chunkDur / Math.max(1, newWordsText.length)
+          updatedWords = newWordsText.map((word, idx) => ({
+            word,
+            start: chunk.chunkStart + idx * wordDur,
+            end: chunk.chunkStart + (idx + 1) * wordDur
+          }))
+        }
+
+        return { ...chunk, text, words: updatedWords }
+      })
+      return { subtitleChunks }
+    })
   },
 
   setSubtitleOffset: (ms) => {

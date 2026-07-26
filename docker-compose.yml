@@ -1,0 +1,22 @@
+# Local preview — mirrors how this app runs on Railway, but on your own
+# machine. Handles yt-dlp/ffmpeg/Python for you inside the container, so you
+# don't need to install any of that on Windows directly.
+#
+# Usage:
+#   1. Copy .env.example to .env.local and fill in your API key(s)
+#   2. docker compose up --build
+#   3. Open http://localhost:3000
+services:
+  zieclipper:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      # Keeps downloaded videos / exports on your disk across restarts,
+      # instead of losing them every time the container rebuilds.
+      - zieclipper-tmp:/app/tmp
+
+volumes:
+  zieclipper-tmp:

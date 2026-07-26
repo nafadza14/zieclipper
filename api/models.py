@@ -37,6 +37,7 @@ class AnalyzeRequest(BaseModel):
     provider: str = "anthropic"
     video_duration: Optional[float] = 0
     language: str = "English"
+    target_duration: Optional[str] = "auto"
 
 
 class AnalyzeResponse(BaseModel):

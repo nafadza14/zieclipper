@@ -14,7 +14,7 @@ const TABS = [
   { id: 'subtitles', label: 'Subtitles', icon: '⏱' },
   { id: 'font',      label: 'Font',      icon: 'Aa' },
   { id: 'emoji',     label: 'Emoji',     icon: '✦' },
-  { id: 'crop',      label: 'Crop',      icon: '⊡' },
+  { id: 'crop',      label: 'Positioning', icon: '⊡' },
   { id: 'export',    label: 'Export',    icon: '↓' },
 ]
 
@@ -27,7 +27,7 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const { setJob, clip, subtitleChunks, settings } = useEditorStore()
+  const { setJob, clip, subtitleChunks, settings, updateSubtitleChunkText } = useEditorStore()
 
   useEffect(() => {
     fetch(`/api/jobs/${jobId}`)
@@ -37,7 +37,7 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
         const c = job.clips[clipIndex]
         if (!c) throw new Error('Clip not found')
         const clipTranscript = (job.transcript || []).filter(
-          (w) => w.end >= c.start_time && w.start <= c.end_time
+          (w) => w.end >= c.start_time - 15 && w.start <= c.end_time + 15
         )
         setJob(jobId, clipIndex, c, clipTranscript)
         setLoading(false)
@@ -47,8 +47,8 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center min-h-screen bg-black">
+        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -78,7 +78,7 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
         <h1 className="text-sm font-medium text-white truncate flex-1">{clip.title}</h1>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[11px] text-[#413d52] font-mono">
-            {Math.round(clip.end_time - clip.start_time)}s
+            {Math.round(clip.end_time + (settings.crop.endOffset || 0) - (clip.start_time + (settings.crop.startOffset || 0)))}s
           </span>
           <span className={`text-[11px] font-medium px-2 py-0.5 rounded-md ${
             clip.score >= 8 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
@@ -104,14 +104,14 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
                 title={tab.label}
                 className={`flex-1 flex flex-col items-center justify-center py-3 gap-0.5 text-[10px] font-medium transition-colors relative ${
                   activeTab === tab.id
-                    ? 'text-violet-400'
+                    ? 'text-white'
                     : 'text-[#413d52] hover:text-[#7c7490]'
                 }`}
               >
                 <span className="text-sm leading-none">{tab.icon}</span>
                 <span>{tab.label}</span>
                 {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-violet-500 rounded-full" />
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-white rounded-full" />
                 )}
               </button>
             ))}
@@ -131,11 +131,11 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
         <main className="flex-1 bg-[#07070b] flex items-center justify-center p-6 overflow-hidden">
           {/* Subtle ambient glow behind the phone */}
           <div className="relative">
-            <div className="absolute inset-0 -m-12 bg-violet-600/8 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute inset-0 -m-12 bg-white/5 rounded-full blur-3xl pointer-events-none" />
             <VideoPlayer
               jobId={jobId}
-              clipStart={clip.start_time}
-              clipEnd={clip.end_time}
+              clipStart={clip.start_time + (settings.crop.startOffset || 0)}
+              clipEnd={clip.end_time + (settings.crop.endOffset || 0)}
               chunks={subtitleChunks}
               settings={settings}
             />
@@ -152,16 +152,27 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
               {subtitleChunks.length}
             </span>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {subtitleChunks.map((chunk) => (
               <div
                 key={chunk.id}
-                className="bg-[#13131e] rounded-xl px-3 py-2.5 border border-white/[0.05] hover:border-white/[0.09] transition-colors"
+                className="bg-[#13131e] rounded-xl px-3 py-2.5 border border-white/[0.04] focus-within:border-white/20 transition-all duration-150"
               >
-                <p className="text-xs text-white/80 leading-relaxed">{chunk.text}</p>
-                <p className="text-[10px] text-[#413d52] mt-1.5 font-mono">
-                  {chunk.chunkStart.toFixed(1)}s – {chunk.chunkEnd.toFixed(1)}s
-                </p>
+                <textarea
+                  value={chunk.text}
+                  onChange={(e) => updateSubtitleChunkText(chunk.id, e.target.value)}
+                  className="w-full bg-transparent border-0 p-0 text-xs text-white/90 leading-relaxed focus:ring-0 focus:outline-none resize-none font-medium placeholder-white/30"
+                  rows={2}
+                  placeholder="Ketik subtitle di sini..."
+                />
+                <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-white/[0.03]">
+                  <span className="text-[9px] text-[#413d52] font-mono tracking-wider uppercase font-semibold">
+                    Chunk #{chunk.id}
+                  </span>
+                  <span className="text-[9px] text-[#413d52] font-mono">
+                    {chunk.chunkStart.toFixed(1)}s – {chunk.chunkEnd.toFixed(1)}s
+                  </span>
+                </div>
               </div>
             ))}
           </div>

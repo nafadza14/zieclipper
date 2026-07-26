@@ -2,25 +2,26 @@ import { spawn } from 'child_process'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import { ensureBinaries } from './binaries'
+import { runFFmpeg } from './ffmpeg-processor'
 
-const YTDLP = process.env.YTDLP_PATH || 'yt-dlp'
 const TMP_ROOT = path.join(os.tmpdir(), 'zieclipper')
 export const COOKIES_FILE = path.join(TMP_ROOT, 'yt-cookies.txt')
+const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
 
-export interface DownloadResult {
-  videoPath: string
+export interface SubtitleResult {
   title: string
   duration: number
   vttFiles: Record<string, string>  // lang code → absolute file path
 }
 
-import { ensureBinaries } from './binaries'
-
-export function downloadVideo(
+/**
+ * Downloads subtitles and metadata info JSON from YouTube without downloading the video.
+ */
+export function downloadSubtitlesAndMetadata(
   url: string,
   outputDir: string,
-  onProgress: (pct: number, status: string) => void,
-): Promise<DownloadResult> {
+): Promise<SubtitleResult> {
   return new Promise(async (resolve, reject) => {
     try {
       const { ytdlp } = await ensureBinaries()
@@ -28,96 +29,162 @@ export function downloadVideo(
       fs.mkdirSync(outputDir, { recursive: true })
       fs.mkdirSync(TMP_ROOT, { recursive: true })
 
-      const outputTemplate = path.join(outputDir, 'source.%(ext)s')
-
       const args = [
         url,
-        '--format', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]',
-        '--merge-output-format', 'mp4',
+        '--skip-download',
         '--write-info-json',
         '--write-subs',
         '--write-auto-subs',
         '--sub-langs', 'all',
         '--sub-format', 'vtt',
-        // Use cookies file if the user has exported one (see README for instructions)
         ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
         '--extractor-retries', '3',
         '--sleep-requests', '1',
         '--ignore-errors',
         '--no-playlist',
-        '--output', outputTemplate,
-        '--newline',
+        '--output', path.join(outputDir, 'source.%(ext)s'),
       ]
 
       const proc = spawn(ytdlp, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: 'ignore',
         windowsHide: true,
       })
 
-      let stderrBuf = ''
+      proc.on('close', (code) => {
+        const files = fs.readdirSync(outputDir)
+        
+        // Parse info JSON
+        let title = 'Untitled'
+        let duration = 0
+        const infoFile = files.find((f) => f.endsWith('.info.json'))
+        if (infoFile) {
+          try {
+            const info = JSON.parse(fs.readFileSync(path.join(outputDir, infoFile), 'utf-8'))
+            title = info.title || title
+            duration = info.duration || 0
+          } catch {}
+        }
 
-    proc.stdout.on('data', (data: Buffer) => {
-      const text = data.toString()
+        // Collect VTT files
+        const vttFiles: Record<string, string> = {}
+        for (const f of files) {
+          if (!f.endsWith('.vtt')) continue
+          const langCode = f.replace(/^source\./, '').replace(/\.vtt$/, '')
+          if (langCode) vttFiles[langCode] = path.join(outputDir, f)
+        }
 
-      // Parse download progress: [download]  45.2% of 234.56MiB
-      const pctMatch = text.match(/\[download\]\s+([\d.]+)%/)
-      if (pctMatch) {
-        const pct = parseFloat(pctMatch[1])
-        onProgress(Math.round(pct), 'downloading')
-      }
+        resolve({ title, duration, vttFiles })
+      })
 
-      // Detect merge/post-processing
-      if (text.includes('[Merger]') || text.includes('Merging')) {
-        onProgress(98, 'merging')
-      }
-    })
-
-    proc.stderr.on('data', (d: Buffer) => { stderrBuf += d.toString() })
-
-    proc.on('close', async (code) => {
-      // Check for video file before deciding whether a non-zero exit is fatal.
-      // Subtitle 429 errors cause exit code 1 even when the video downloaded fine.
-      const files = fs.readdirSync(outputDir)
-      const videoFile = files.find((f) => f.startsWith('source.') && f.endsWith('.mp4'))
-
-      if (code !== 0 && !videoFile) {
-        return reject(new Error(`yt-dlp exited ${code}: ${stderrBuf.slice(-1000)}`))
-      }
-      if (!videoFile) {
-        return reject(new Error('Video file not found after download'))
-      }
-
-      const videoPath = path.join(outputDir, videoFile)
-
-      // Parse info JSON
-      let title = 'Untitled'
-      let duration = 0
-      const infoFile = files.find((f) => f.endsWith('.info.json'))
-      if (infoFile) {
-        try {
-          const info = JSON.parse(fs.readFileSync(path.join(outputDir, infoFile), 'utf-8'))
-          title = info.title || title
-          duration = info.duration || 0
-        } catch {}
-      }
-
-      // Collect all downloaded VTT files, keyed by language code
-      // yt-dlp names them: source.<langcode>.vtt  (e.g. source.id.vtt, source.en.vtt)
-      const vttFiles: Record<string, string> = {}
-      for (const f of files) {
-        if (!f.endsWith('.vtt')) continue
-        // Strip "source." prefix and ".vtt" suffix to get lang code
-        const langCode = f.replace(/^source\./, '').replace(/\.vtt$/, '')
-        if (langCode) vttFiles[langCode] = path.join(outputDir, f)
-      }
-
-      onProgress(100, 'done')
-      resolve({ videoPath, title, duration, vttFiles })
-    })
-
-    proc.on('error', (err) => reject(new Error(`yt-dlp spawn error: ${err.message}`)))
+      proc.on('error', (err) => reject(new Error(`yt-dlp spawn error: ${err.message}`)))
     } catch (err: any) {
       reject(err)
     }
   })
+}
+
+/**
+ * Downloads a specific time-range of a video from YouTube using HTTP range requests.
+ * Uses a single progressive MP4 format to skip the slow DASH separation and merge step.
+ */
+export function downloadVideoSection(
+  url: string,
+  start: number,
+  end: number,
+  outputDir: string,
+  outputFilename: string,
+): Promise<string> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const { ytdlp, ffmpeg } = await ensureBinaries()
+
+      fs.mkdirSync(outputDir, { recursive: true })
+      const outputPath = path.join(outputDir, outputFilename)
+
+      // Section format required by yt-dlp: *start-end
+      const sectionArg = `*${start}-${end}`
+
+      const args = [
+        url,
+        // Prefer format 22 (720p mp4 progressive) or format 18 (360p mp4 progressive).
+        // This avoids YouTube DASH throttling and skips the slow ffmpeg merge/transcode step on download.
+        '--format', 'best[height<=720][ext=mp4]/best',
+        '--download-sections', sectionArg,
+        ...(ffmpeg !== 'ffmpeg' ? ['--ffmpeg-location', path.dirname(ffmpeg)] : []),
+        ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
+        '--extractor-retries', '3',
+        '--sleep-requests', '1',
+        '--ignore-errors',
+        '--no-playlist',
+        '--output', outputPath,
+      ]
+
+      const proc = spawn(ytdlp, args, {
+        stdio: 'ignore',
+        windowsHide: true,
+      })
+
+      proc.on('close', (code) => {
+        if (code !== 0 && !fs.existsSync(outputPath)) {
+          return reject(new Error(`yt-dlp section download exited ${code}`))
+        }
+        resolve(outputPath)
+      })
+
+      proc.on('error', (err) => reject(new Error(`yt-dlp section spawn error: ${err.message}`)))
+    } catch (err: any) {
+      reject(err)
+    }
+  })
+}
+
+/**
+ * Ensures a specific segment of video is downloaded and trimmed locally.
+ * Caches both the buffered raw section and the exact trimmed result.
+ */
+export async function ensureVideoSegment(
+  jobId: string,
+  url: string,
+  start: number,
+  end: number
+): Promise<string> {
+  const outputDir = path.join(TMP_DIR, jobId)
+  const exactName = `segment_${Math.round(start * 10)}_${Math.round(end * 10)}.mp4`
+  const exactPath = path.join(outputDir, exactName)
+
+  if (fs.existsSync(exactPath)) {
+    return exactPath
+  }
+
+  // Download a buffered segment first to allow user to adjust trim range without new download
+  const BUFFER_SEC = 10
+  const bufferedStart = Math.max(0, Math.floor(start - BUFFER_SEC))
+  const bufferedEnd = Math.ceil(end + BUFFER_SEC)
+
+  const bufferedName = `buffered_${bufferedStart}_${bufferedEnd}.mp4`
+  const bufferedPath = path.join(outputDir, bufferedName)
+
+  // Download section from YouTube if the buffered file doesn't exist
+  if (!fs.existsSync(bufferedPath)) {
+    await downloadVideoSection(url, bufferedStart, bufferedEnd, outputDir, bufferedName)
+  }
+
+  // Local transcode using ultra-fast presets to guarantee keyframe-perfect timing
+  // and prevent browser video player from hanging on load (no I-frame issues).
+  const relativeStart = start - bufferedStart
+  const duration = end - start
+
+  const ffmpegArgs = [
+    '-y',
+    '-ss', String(relativeStart),
+    '-i', bufferedPath,
+    '-t', String(duration),
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-c:a', 'aac',
+    exactPath
+  ]
+  await runFFmpeg(ffmpegArgs)
+
+  return exactPath
 }

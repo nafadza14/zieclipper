@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
-import path from 'path'
-import os from 'os'
 import { getJob } from '@/server/job-manager'
-import { runFFmpeg } from '@/server/ffmpeg-processor'
-import { buildSegmentArgs } from '@/lib/ffmpeg-commands'
-
-const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
+import { ensureVideoSegment } from '@/server/ytdlp-service'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params
@@ -15,19 +10,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ jobI
   const end = parseFloat(searchParams.get('end') || '0')
 
   const job = getJob(jobId)
-  if (!job?.videoPath) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+  if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
 
-  let filePath = job.videoPath
+  if (end <= start) {
+    return NextResponse.json({ error: 'Invalid start/end parameters' }, { status: 400 })
+  }
 
-  // If start/end provided, serve trimmed segment (cached)
-  if (end > start) {
-    const segName = `segment_${Math.round(start * 10)}_${Math.round(end * 10)}.mp4`
-    const segPath = path.join(TMP_DIR, jobId, segName)
-
-    if (!fs.existsSync(segPath)) {
-      await runFFmpeg(buildSegmentArgs(job.videoPath, start, end, segPath))
-    }
-    filePath = segPath
+  let filePath: string
+  try {
+    filePath = await ensureVideoSegment(jobId, job.url, start, end)
+  } catch (err: any) {
+    return NextResponse.json({ error: `Failed to fetch segment: ${err.message}` }, { status: 500 })
   }
 
   const stat = fs.statSync(filePath)

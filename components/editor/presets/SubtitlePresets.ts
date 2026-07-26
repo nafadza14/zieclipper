@@ -153,8 +153,15 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   subtitleStyle: SUBTITLE_PRESETS.MrBeast.subtitleStyle,
   font: SUBTITLE_PRESETS.MrBeast.font,
   emoji: SUBTITLE_PRESETS.MrBeast.emoji,
-  // x centers the 9:16 strip: (1 - (9/16)^2) / 2 ≈ 0.3418
-  crop: { x: (1 - (9 * 9) / (16 * 16)) / 2, width: (9 * 9) / (16 * 16), background: 'blur', backgroundColor: '#000000' },
+  crop: {
+    x: (1 - (9 * 9) / (16 * 16)) / 2,
+    width: (9 * 9) / (16 * 16),
+    background: 'blur',
+    backgroundColor: '#000000',
+    style: 'fill',
+    startOffset: 0,
+    endOffset: 0
+  },
   trim: { start: 0, end: 0 },
   subtitleOffsetMs: 0,
 }

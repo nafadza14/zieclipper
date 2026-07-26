@@ -68,5 +68,18 @@ def call_tool(
         tools=[oai_tool],
         tool_choice={"type": "function", "function": {"name": tool_name}},
     )
-    args_str = resp.choices[0].message.tool_calls[0].function.arguments
+    tool_calls = resp.choices[0].message.tool_calls
+    if not tool_calls:
+        content = resp.choices[0].message.content
+        if content:
+            import re
+            m = re.search(r'(\{.*\})', content, re.DOTALL)
+            if m:
+                try:
+                    return json.loads(m.group(1))
+                except Exception:
+                    pass
+        raise RuntimeError(f"Model failed to invoke tool. Response content: {content}")
+
+    args_str = tool_calls[0].function.arguments
     return json.loads(args_str)

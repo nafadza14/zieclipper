@@ -18,15 +18,15 @@ export function SubtitleStylePanel() {
     <div className="space-y-5">
       {/* Presets */}
       <div>
-        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Style Preset</label>
+        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block font-medium">Style Preset</label>
         <div className="grid grid-cols-3 gap-2">
           {Object.keys(SUBTITLE_PRESETS).map((name) => (
             <button
               key={name}
               onClick={() => applyPreset(name)}
-              className={`py-2 px-2 rounded-lg text-xs font-medium border transition ${
+              className={`py-2 px-2 rounded-lg text-xs font-semibold border transition ${
                 subtitleStyle.preset === name
-                  ? 'border-purple-500 bg-purple-500/10 text-purple-300'
+                  ? 'border-white bg-white/10 text-white'
                   : 'border-[#2a2a2a] bg-[#141414] text-gray-400 hover:border-[#444]'
               }`}
             >
@@ -38,11 +38,11 @@ export function SubtitleStylePanel() {
 
       {/* Transition */}
       <div>
-        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Transition</label>
+        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block font-medium">Transition</label>
         <select
           value={subtitleStyle.transition}
           onChange={(e) => updateSubtitleStyle({ transition: e.target.value as any })}
-          className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+          className="w-full bg-[#141414] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white"
         >
           {TRANSITIONS.map((t) => (
             <option key={t} value={t}>{t}</option>
@@ -52,7 +52,7 @@ export function SubtitleStylePanel() {
 
       {/* Split mode */}
       <div>
-        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Split By</label>
+        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block font-medium">Split By</label>
         <div className="flex gap-2">
           {SPLIT_MODES.map((m) => (
             <button
@@ -60,7 +60,7 @@ export function SubtitleStylePanel() {
               onClick={() => updateSubtitleStyle({ splitMode: m.value })}
               className={`flex-1 py-2 text-xs rounded-lg border transition ${
                 subtitleStyle.splitMode === m.value
-                  ? 'border-purple-500 bg-purple-500/10 text-purple-300'
+                  ? 'border-white bg-white/10 text-white font-medium'
                   : 'border-[#2a2a2a] bg-[#141414] text-gray-400 hover:border-[#444]'
               }`}
             >
@@ -76,16 +76,16 @@ export function SubtitleStylePanel() {
               max={subtitleStyle.splitMode === 'byWordCount' ? 10 : 80}
               value={subtitleStyle.splitValue}
               onChange={(e) => updateSubtitleStyle({ splitValue: parseInt(e.target.value) })}
-              className="w-full accent-purple-500"
+              className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer"
             />
-            <div className="text-xs text-gray-500 mt-1 text-center">{subtitleStyle.splitValue} {subtitleStyle.splitMode === 'byWordCount' ? 'words' : 'chars'} per chunk</div>
+            <div className="text-xs text-gray-500 mt-1.5 text-center">{subtitleStyle.splitValue} {subtitleStyle.splitMode === 'byWordCount' ? 'words' : 'chars'} per chunk</div>
           </div>
         )}
       </div>
 
       {/* Position */}
       <div>
-        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Position</label>
+        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block font-medium">Position</label>
         <div className="flex gap-2 mb-2">
           {POSITIONS.map((p) => (
             <button
@@ -93,7 +93,7 @@ export function SubtitleStylePanel() {
               onClick={() => updateSubtitleStyle({ position: p })}
               className={`flex-1 py-2 text-xs rounded-lg border capitalize transition ${
                 subtitleStyle.position === p
-                  ? 'border-purple-500 bg-purple-500/10 text-purple-300'
+                  ? 'border-white bg-white/10 text-white font-medium'
                   : 'border-[#2a2a2a] bg-[#141414] text-gray-400 hover:border-[#444]'
               }`}
             >
@@ -107,32 +107,32 @@ export function SubtitleStylePanel() {
           max={300}
           value={subtitleStyle.positionOffsetY}
           onChange={(e) => updateSubtitleStyle({ positionOffsetY: parseInt(e.target.value) })}
-          className="w-full accent-purple-500"
+          className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer"
         />
-        <div className="text-xs text-gray-500 mt-1 text-center">Y offset: {subtitleStyle.positionOffsetY}px</div>
+        <div className="text-xs text-gray-500 mt-1.5 text-center">Y offset: {subtitleStyle.positionOffsetY}px</div>
       </div>
 
       {/* Background */}
       <div>
-        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Background</label>
+        <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block font-medium">Background</label>
         <div className="flex items-center gap-3 mb-2">
           <button
             onClick={() => updateSubtitleStyle({ background: { ...subtitleStyle.background, enabled: !subtitleStyle.background.enabled } })}
-            className={`relative w-10 h-5 rounded-full transition ${subtitleStyle.background.enabled ? 'bg-purple-600' : 'bg-[#333]'}`}
+            className={`relative w-10 h-5 rounded-full transition ${subtitleStyle.background.enabled ? 'bg-white' : 'bg-[#333]'}`}
           >
-            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${subtitleStyle.background.enabled ? 'left-5' : 'left-0.5'}`} />
+            <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${subtitleStyle.background.enabled ? 'left-5 bg-[#0d0d16]' : 'left-0.5 bg-white'}`} />
           </button>
           <span className="text-sm text-gray-300">Background box</span>
         </div>
         {subtitleStyle.background.enabled && (
           <div className="space-y-2 pl-2 border-l border-[#2a2a2a]">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400 w-16">Color</span>
+              <span className="text-xs text-gray-400 w-16 font-medium">Color</span>
               <input
                 type="color"
                 value={subtitleStyle.background.color.slice(0, 7)}
                 onChange={(e) => updateSubtitleStyle({ background: { ...subtitleStyle.background, color: e.target.value + 'bf' } })}
-                className="w-8 h-7 rounded cursor-pointer"
+                className="w-8 h-7 rounded cursor-pointer border-0 bg-transparent"
               />
             </div>
             <div>
@@ -142,9 +142,9 @@ export function SubtitleStylePanel() {
                 max={30}
                 value={subtitleStyle.background.padding}
                 onChange={(e) => updateSubtitleStyle({ background: { ...subtitleStyle.background, padding: parseInt(e.target.value) } })}
-                className="w-full accent-purple-500"
+                className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer"
               />
-              <div className="text-xs text-gray-500">Padding: {subtitleStyle.background.padding}px</div>
+              <div className="text-xs text-gray-500 mt-1">Padding: {subtitleStyle.background.padding}px</div>
             </div>
           </div>
         )}
@@ -152,7 +152,7 @@ export function SubtitleStylePanel() {
 
       {/* Sync offset */}
       <div>
-        <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block">Subtitle Sync</label>
+        <label className="text-xs text-gray-400 uppercase tracking-wider mb-1 block font-medium">Subtitle Sync</label>
         <p className="text-[10px] text-gray-600 mb-2">Slide to manually sync subtitles with audio</p>
         <input
           type="range"
@@ -161,18 +161,18 @@ export function SubtitleStylePanel() {
           step={50}
           value={subtitleOffsetMs}
           onChange={(e) => setSubtitleOffset(parseInt(e.target.value))}
-          className="w-full accent-purple-500"
+          className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer"
         />
-        <div className="flex justify-between items-center mt-1">
+        <div className="flex justify-between items-center mt-1.5">
           <span className="text-[10px] text-gray-500">-2s</span>
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-mono font-medium ${subtitleOffsetMs === 0 ? 'text-gray-500' : subtitleOffsetMs > 0 ? 'text-yellow-400' : 'text-blue-400'}`}>
+            <span className={`text-xs font-mono font-medium ${subtitleOffsetMs === 0 ? 'text-gray-500' : 'text-white'}`}>
               {subtitleOffsetMs > 0 ? '+' : ''}{subtitleOffsetMs}ms
             </span>
             {subtitleOffsetMs !== 0 && (
               <button
                 onClick={() => setSubtitleOffset(0)}
-                className="text-[10px] text-gray-500 hover:text-white transition px-1 py-0.5 rounded border border-[#333]"
+                className="text-[10px] text-gray-500 hover:text-white transition px-1.5 py-0.5 rounded border border-[#333]"
               >
                 reset
               </button>

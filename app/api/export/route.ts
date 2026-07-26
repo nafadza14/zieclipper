@@ -8,6 +8,7 @@ import { runFFmpeg } from '@/server/ffmpeg-processor'
 import { buildExportArgs } from '@/lib/ffmpeg-commands'
 import { generateAssFile } from '@/lib/ass-generator'
 import type { EditorSettings, SubtitleChunk } from '@/store/types'
+import { ensureVideoSegment } from '@/server/ytdlp-service'
 
 const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
 
@@ -45,12 +46,25 @@ export async function POST(req: NextRequest) {
   }
 
   const job = getJob(jobId)
-  if (!job?.videoPath || !job.clips) {
+  if (!job || !job.clips) {
     return NextResponse.json({ error: 'Job not ready' }, { status: 404 })
   }
 
   const clip = job.clips[clipIndex]
   if (!clip) return NextResponse.json({ error: 'Clip not found' }, { status: 404 })
+
+  const startOffset = settings.crop.startOffset || 0
+  const endOffset = settings.crop.endOffset || 0
+  const actualStart = clip.start_time + startOffset
+  const actualEnd = clip.end_time + endOffset
+
+  // Download/trim the source video segment first if not already done
+  let segmentPath: string
+  try {
+    segmentPath = await ensureVideoSegment(jobId, job.url, actualStart, actualEnd)
+  } catch (err: any) {
+    return NextResponse.json({ error: `Failed to fetch source video segment: ${err.message}` }, { status: 500 })
+  }
 
   const exportId = nanoid()
   const exportDir = path.join(TMP_DIR, jobId, 'exports')
@@ -61,21 +75,17 @@ export async function POST(req: NextRequest) {
 
   createExportJob(exportId, jobId, clipIndex)
 
-  // Adjust chunk timings relative to clip, applying subtitle sync offset to match preview.
-  // Clamp to [0, clipDur]: transcript words can start slightly before the clip
-  // (they're included when word.end >= clip.start_time) and negative ASS
-  // timestamps make libass silently drop the event.
   const offsetSec = (settings.subtitleOffsetMs ?? 0) / 1000
-  const clipDur = clip.end_time - clip.start_time
+  const clipDur = actualEnd - actualStart
   const adjustedChunks = subtitleChunks
     .map((c) => ({
       ...c,
-      chunkStart: Math.max(0, c.chunkStart - clip.start_time + offsetSec),
-      chunkEnd: Math.min(clipDur, c.chunkEnd - clip.start_time + offsetSec),
+      chunkStart: Math.max(0, c.chunkStart - actualStart + offsetSec),
+      chunkEnd: Math.min(clipDur, c.chunkEnd - actualStart + offsetSec),
       words: c.words.map((w) => ({
         ...w,
-        start: Math.max(0, w.start - clip.start_time + offsetSec),
-        end: Math.min(clipDur, Math.max(0, w.end - clip.start_time + offsetSec)),
+        start: Math.max(0, w.start - actualStart + offsetSec),
+        end: Math.min(clipDur, Math.max(0, w.end - actualStart + offsetSec)),
       })),
     }))
     .filter((c) => c.chunkEnd > c.chunkStart)
@@ -88,12 +98,12 @@ export async function POST(req: NextRequest) {
   // Run export in background
   runFFmpeg(
     buildExportArgs({
-      sourcePath: job.videoPath,
+      sourcePath: segmentPath,
       assPath,
       outputPath,
       settings,
-      clipStart: clip.start_time,
-      clipEnd: clip.end_time,
+      clipStart: 0,
+      clipEnd: clipDur,
     }),
     (progress) => updateExportJob(exportId, { progress }),
     clipDuration

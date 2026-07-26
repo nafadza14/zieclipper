@@ -48,8 +48,8 @@ export default function ClipsPage({ params }: { params: Promise<{ jobId: string 
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center min-h-screen bg-black">
+        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
@@ -87,7 +87,7 @@ export default function ClipsPage({ params }: { params: Promise<{ jobId: string 
             {job.duration ? (
               <span className="text-[#413d52] text-xs font-mono">{formatDuration(job.duration)}</span>
             ) : null}
-            <span className="bg-violet-500/10 border border-violet-500/20 text-violet-300 text-xs font-medium px-2.5 py-1 rounded-lg">
+            <span className="bg-white/10 border border-white/20 text-white text-xs font-semibold px-2.5 py-1 rounded-lg">
               {clips.length} clips
             </span>
           </div>
@@ -108,63 +108,47 @@ export default function ClipsPage({ params }: { params: Promise<{ jobId: string 
             <div className="mb-8">
               <h2 className="text-2xl font-bold text-white mb-1">Viral Moments</h2>
               <p className="text-[#7c7490] text-sm">
-                AI found <span className="text-violet-300 font-medium">{clips.length} clips</span> sorted by viral potential
+                AI found <span className="text-white font-medium">{clips.length} clips</span> sorted by viral potential
               </p>
             </div>
 
             {/* Subtitle picker */}
             {(autoSubs.length > 0 || manualSubs.length > 0) && (
-              <div className="mb-8 bg-[#0d0d16]/60 border border-white/[0.06] rounded-2xl p-4 space-y-3">
+              <div className="mb-8 bg-[#0d0d16]/60 border border-white/[0.06] rounded-2xl p-5 space-y-3 max-w-sm">
                 <div className="flex items-center gap-2">
-                  <span className="text-white/70 text-sm font-medium">Subtitles</span>
+                  <span className="text-white/70 text-sm font-semibold">Subtitles Language</span>
                   {retranscribing && (
-                    <div className="w-3.5 h-3.5 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   )}
                 </div>
 
-                {autoSubs.length > 0 && (
-                  <div className="space-y-1.5">
-                    <p className="text-[#413d52] text-xs">Auto-generated</p>
-                    <div className="flex flex-wrap gap-2">
-                      {autoSubs.map((s) => (
-                        <button
-                          key={s.code}
-                          onClick={() => switchSubtitle(s.code)}
-                          disabled={retranscribing}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition duration-150 disabled:opacity-50 ${
-                            selectedLang === s.code
-                              ? 'border-violet-500/50 bg-violet-500/10 text-violet-300'
-                              : 'border-white/[0.07] bg-[#13131e] text-[#7c7490] hover:border-white/15 hover:text-white/70'
-                          }`}
-                        >
-                          {s.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {manualSubs.length > 0 && (
-                  <div className="space-y-1.5">
-                    <p className="text-[#413d52] text-xs">Manual</p>
-                    <div className="flex flex-wrap gap-2">
-                      {manualSubs.map((s) => (
-                        <button
-                          key={s.code}
-                          onClick={() => switchSubtitle(s.code)}
-                          disabled={retranscribing}
-                          className={`px-3 py-1.5 rounded-xl border text-xs font-medium transition duration-150 disabled:opacity-50 ${
-                            selectedLang === s.code
-                              ? 'border-violet-500/50 bg-violet-500/10 text-violet-300'
-                              : 'border-white/[0.07] bg-[#13131e] text-[#7c7490] hover:border-white/15 hover:text-white/70'
-                          }`}
-                        >
-                          {s.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <div className="relative">
+                  <select
+                    value={selectedLang}
+                    onChange={(e) => switchSubtitle(e.target.value)}
+                    disabled={retranscribing}
+                    className="w-full bg-[#13131e] text-white border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-white transition-colors cursor-pointer appearance-none font-semibold text-center"
+                  >
+                    {autoSubs.length > 0 && (
+                      <optgroup label="Auto-generated" className="bg-[#13131e]">
+                        {autoSubs.map((s) => (
+                          <option key={s.code} value={s.code}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {manualSubs.length > 0 && (
+                      <optgroup label="Manual" className="bg-[#13131e]">
+                        {manualSubs.map((s) => (
+                          <option key={s.code} value={s.code}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
               </div>
             )}
 

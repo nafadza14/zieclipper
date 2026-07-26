@@ -32,7 +32,7 @@ export function ClipCard({ clip, index, jobId }: Props) {
 
   return (
     <div
-      className="group bg-[#0d0d16] border border-white/[0.07] rounded-2xl overflow-hidden hover:border-violet-500/30 hover:shadow-lg hover:shadow-violet-500/5 transition-all duration-200 cursor-pointer"
+      className="group bg-[#0d0d16] border border-white/[0.07] rounded-2xl overflow-hidden hover:border-white/20 hover:shadow-lg hover:shadow-white/5 transition-all duration-200 cursor-pointer"
       onClick={() => router.push(`/editor/${jobId}/${index}`)}
     >
       {/* Thumbnail */}
@@ -48,7 +48,7 @@ export function ClipCard({ clip, index, jobId }: Props) {
           {formatDuration(duration)}
         </div>
         {/* Hover overlay */}
-        <div className="absolute inset-0 bg-violet-600/0 group-hover:bg-violet-600/10 transition-colors duration-200 flex items-center justify-center">
+        <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors duration-200 flex items-center justify-center">
           <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white text-sm">
             ▶
           </div>
@@ -78,7 +78,7 @@ export function ClipCard({ clip, index, jobId }: Props) {
           <span className="text-[11px] text-[#413d52] font-mono">
             {formatDuration(clip.start_time)} – {formatDuration(clip.end_time)}
           </span>
-          <span className="text-[11px] text-violet-400/70 font-medium group-hover:text-violet-400 transition-colors">
+          <span className="text-[11px] text-white/70 font-medium group-hover:text-white transition-colors">
             Edit →
           </span>
         </div>
