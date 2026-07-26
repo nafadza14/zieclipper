@@ -135,7 +135,7 @@ function langName(code: string): string {
 async function fetchTranscriptAndAnalyze(
   jobId: string,
   videoId: string,
-  videoPath: string,
+  videoPath: string | undefined,
   model: string,
   provider: string,
   vttPath?: string,
