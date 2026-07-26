@@ -8,7 +8,7 @@ function AuthContent() {
   const searchParams = useSearchParams()
   const next = searchParams.get('next') || '/'
 
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,14 +26,15 @@ function AuthContent() {
 
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault()
-    if (!email.trim() || !password.trim()) return
+    if (!email.trim()) return
+    if (mode !== 'forgot' && !password.trim()) return
 
     setLoading(true)
     setError(null)
     setMessage(null)
 
     try {
-      if (isSignUp) {
+      if (mode === 'signup') {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password: password.trim(),
@@ -45,13 +46,20 @@ function AuthContent() {
         } else {
           setMessage('Check your email for the confirmation link!')
         }
-      } else {
+      } else if (mode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password: password.trim(),
         })
         if (error) throw error
         router.push(next)
+      } else {
+        // Forgot password flow
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: `${window.location.origin}/auth/reset-password`,
+        })
+        if (error) throw error
+        setMessage('Reset link sent! Please check your email inbox.')
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication')
@@ -89,31 +97,37 @@ function AuthContent() {
           <div className="text-center space-y-1">
             <h2 className="text-xl font-semibold text-white">zieclipper account</h2>
             <p className="text-xs text-neutral-400">
-              {isSignUp ? 'create a new account to save your clips' : 'sign in to continue to your clips'}
+              {mode === 'signup'
+                ? 'create a new account to save your clips'
+                : mode === 'signin'
+                ? 'sign in to continue to your clips'
+                : 'enter your email to reset your password'}
             </p>
           </div>
 
           {/* Tabs */}
-          <div className="flex bg-neutral-900 p-1 rounded-xl">
-            <button
-              type="button"
-              onClick={() => { setIsSignUp(false); setError(null); setMessage(null) }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                !isSignUp ? 'bg-white text-black shadow-md' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setIsSignUp(true); setError(null); setMessage(null) }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                isSignUp ? 'bg-white text-black shadow-md' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Sign Up
-            </button>
-          </div>
+          {mode !== 'forgot' && (
+            <div className="flex bg-neutral-900 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => { setMode('signin'); setError(null); setMessage(null) }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+                  mode === 'signin' ? 'bg-white text-black shadow-md' : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('signup'); setError(null); setMessage(null) }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+                  mode === 'signup' ? 'bg-white text-black shadow-md' : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div className="space-y-1.5">
@@ -130,19 +144,32 @@ function AuthContent() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider block">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                className="w-full bg-neutral-900 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-neutral-500 focus:outline-none focus:border-white text-sm transition"
-              />
-            </div>
+            {mode !== 'forgot' && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider block">
+                    Password
+                  </label>
+                  {mode === 'signin' && (
+                    <button
+                      type="button"
+                      onClick={() => { setMode('forgot'); setError(null); setMessage(null) }}
+                      className="text-[10px] text-neutral-400 hover:text-white transition-colors underline cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full bg-neutral-900 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-neutral-500 focus:outline-none focus:border-white text-sm transition"
+                />
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl p-3">
@@ -161,8 +188,20 @@ function AuthContent() {
               disabled={loading}
               className="w-full py-3 rounded-xl bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-lg mt-2"
             >
-              {loading ? 'Processing...' : isSignUp ? 'Create Account' : 'Sign In'}
+              {loading ? 'Processing...' : mode === 'signup' ? 'Create Account' : mode === 'signin' ? 'Sign In' : 'Send Reset Link'}
             </button>
+
+            {mode === 'forgot' && (
+              <div className="text-center mt-3">
+                <button
+                  type="button"
+                  onClick={() => { setMode('signin'); setError(null); setMessage(null) }}
+                  className="text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  ← Back to Sign In
+                </button>
+              </div>
+            )}
           </form>
         </div>
       </div>
