@@ -5,9 +5,12 @@ import type { User, SupabaseClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
-}
+// NOTE: do NOT throw at module top-level. `next build` imports every route
+// module to collect page data, and a top-level throw here would fail the
+// whole build the moment these env vars aren't present in the build
+// environment (e.g. a Preview deploy, or env not scoped to build). Validate
+// lazily inside the function instead, so a genuine misconfiguration surfaces
+// as a clean 500 at request time rather than a broken build.
 
 // Server-side Supabase client for use inside Route Handlers (app/api/**).
 // Reads the session from the request's cookies (set by middleware.ts /
@@ -16,8 +19,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // would for a query the browser made directly. This client never uses the
 // service_role key; it has no more access than the logged-in user does.
 export async function createSupabaseServerClient(): Promise<SupabaseClient> {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY (set them in the Vercel project env for all environments)')
+  }
   const cookieStore = await cookies()
-  return createServerClient(supabaseUrl!, supabaseAnonKey!, {
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll()
