@@ -1,56 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
-import fs from 'fs'
-import { getJob } from '@/server/job-manager'
+import { requireUser } from '@/lib/supabase-server'
 import { ensureVideoSegment } from '@/server/ytdlp-service'
+import { uploadFile, createSignedUrl, fileExistsInStorage, mediaPath } from '@/server/storage'
+
+// Hobby's 300s cap and Vercel's 4.5MB *buffered* response cap both matter
+// here: a 30-60s vertical clip is routinely bigger than 4.5MB, so instead
+// of streaming bytes through this function (the worker's old job) this
+// downloads/trims the segment into Supabase Storage once and redirects the
+// browser to a short-lived signed URL for it -- which also supports Range
+// requests natively, so video scrubbing still works.
+export const maxDuration = 300
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params
+  const auth = await requireUser()
+  if ('error' in auth) return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+
   const { searchParams } = new URL(req.url)
   const start = parseFloat(searchParams.get('start') || '0')
   const end = parseFloat(searchParams.get('end') || '0')
+  if (end <= start) return NextResponse.json({ error: 'Invalid start/end parameters' }, { status: 400 })
 
-  const job = getJob(jobId)
+  const { data: job } = await auth.supabase
+    .from('jobs')
+    .select('id, url')
+    .eq('id', jobId)
+    .eq('user_id', auth.user.id)
+    .maybeSingle()
   if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 })
 
-  if (end <= start) {
-    return NextResponse.json({ error: 'Invalid start/end parameters' }, { status: 400 })
-  }
+  // start/end come from a clip's fixed boundaries (plus the user's saved
+  // trim offsets), not a continuously-changing scrub position, so caching
+  // by the rounded start/end pair in Storage is stable per clip rather than
+  // growing unbounded.
+  const storagePath = mediaPath(auth.user.id, jobId, `segment_${Math.round(start * 10)}_${Math.round(end * 10)}.mp4`)
 
-  let filePath: string
   try {
-    filePath = await ensureVideoSegment(jobId, job.url, start, end)
+    if (!(await fileExistsInStorage(auth.supabase, storagePath))) {
+      const filePath = await ensureVideoSegment(jobId, job.url, start, end)
+      await uploadFile(auth.supabase, storagePath, filePath, 'video/mp4')
+    }
+    const signedUrl = await createSignedUrl(auth.supabase, storagePath, 600)
+    return NextResponse.redirect(signedUrl, 307)
   } catch (err: any) {
     return NextResponse.json({ error: `Failed to fetch segment: ${err.message}` }, { status: 500 })
   }
-
-  const stat = fs.statSync(filePath)
-  const fileSize = stat.size
-  const range = req.headers.get('range')
-
-  if (range) {
-    const parts = range.replace(/bytes=/, '').split('-')
-    const chunkStart = parseInt(parts[0], 10)
-    const chunkEnd = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
-    const chunkSize = chunkEnd - chunkStart + 1
-
-    const stream = fs.createReadStream(filePath, { start: chunkStart, end: chunkEnd })
-    return new NextResponse(stream as any, {
-      status: 206,
-      headers: {
-        'Content-Range': `bytes ${chunkStart}-${chunkEnd}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': String(chunkSize),
-        'Content-Type': 'video/mp4',
-      },
-    })
-  }
-
-  const stream = fs.createReadStream(filePath)
-  return new NextResponse(stream as any, {
-    headers: {
-      'Content-Length': String(fileSize),
-      'Content-Type': 'video/mp4',
-      'Accept-Ranges': 'bytes',
-    },
-  })
 }

@@ -1,31 +1,84 @@
 import type { EditorSettings } from '@/store/types'
 
-type PresetSettings = Omit<EditorSettings, 'crop' | 'trim' | 'subtitleOffsetMs'>
+// videoFormat is intentionally excluded: a caption preset shouldn't force an
+// aspect ratio (the user picks 9:16 / 1:1 / 16:9 separately in CropPanel).
+type PresetSettings = Omit<EditorSettings, 'crop' | 'trim' | 'subtitleOffsetMs' | 'videoFormat'>
 
+// Caption presets inspired by the popular short-form styles (openclip-style
+// lineup). Each is a full subtitleStyle + font + emoji bundle applied by
+// editorStore.applyPreset. Names are descriptive of the look, not brands.
 export const SUBTITLE_PRESETS: Record<string, PresetSettings> = {
-  MrBeast: {
+  Beast: {
     subtitleStyle: {
-      preset: 'MrBeast',
+      preset: 'Beast',
       transition: 'pop',
       splitMode: 'byWordCount',
       splitValue: 3,
-      position: 'bottom',
+      position: 'center',
       positionOffsetY: 0,
       background: { enabled: false, color: '#00000000', padding: 0, borderRadius: 0 },
     },
     font: {
       family: 'Impact',
-      size: 80,
+      size: 84,
       weight: '900',
       color: '#FFFFFF',
       strokeColor: '#000000',
       strokeWidth: 8,
-      highlightColor: '#FFD700',
+      highlightColor: '#FFD400',
       highlightEffect: 'both',
       uppercase: true,
       italic: false,
     },
-    emoji: { enabled: false, position: 'above', size: 60, animation: 'bounce', autoGenerate: false, overrides: {} },
+    emoji: { enabled: true, position: 'above', size: 64, animation: 'bounce', autoGenerate: true, overrides: {} },
+  },
+  Hormozi: {
+    subtitleStyle: {
+      preset: 'Hormozi',
+      transition: 'word-by-word',
+      splitMode: 'byWordCount',
+      splitValue: 3,
+      position: 'center',
+      positionOffsetY: 0,
+      background: { enabled: false, color: '#00000000', padding: 0, borderRadius: 0 },
+    },
+    font: {
+      family: 'Montserrat',
+      size: 80,
+      weight: '900',
+      color: '#FFFFFF',
+      strokeColor: '#000000',
+      strokeWidth: 7,
+      highlightColor: '#22FF66',
+      highlightEffect: 'both',
+      uppercase: true,
+      italic: false,
+    },
+    emoji: { enabled: true, position: 'above', size: 60, animation: 'pop', autoGenerate: true, overrides: {} },
+  },
+  Pop: {
+    subtitleStyle: {
+      preset: 'Pop',
+      transition: 'pop',
+      splitMode: 'byWordCount',
+      splitValue: 4,
+      position: 'center',
+      positionOffsetY: 0,
+      background: { enabled: false, color: '#00000000', padding: 0, borderRadius: 0 },
+    },
+    font: {
+      family: 'Montserrat',
+      size: 74,
+      weight: '800',
+      color: '#FFFFFF',
+      strokeColor: '#000000',
+      strokeWidth: 5,
+      highlightColor: '#FF2D75',
+      highlightEffect: 'color',
+      uppercase: true,
+      italic: false,
+    },
+    emoji: { enabled: true, position: 'above', size: 60, animation: 'pop', autoGenerate: true, overrides: {} },
   },
   'TikTok Bold': {
     subtitleStyle: {
@@ -75,6 +128,30 @@ export const SUBTITLE_PRESETS: Record<string, PresetSettings> = {
     },
     emoji: { enabled: false, position: 'above', size: 48, animation: 'none', autoGenerate: false, overrides: {} },
   },
+  Highlight: {
+    subtitleStyle: {
+      preset: 'Highlight',
+      transition: 'none',
+      splitMode: 'byWordCount',
+      splitValue: 5,
+      position: 'center',
+      positionOffsetY: 0,
+      background: { enabled: false, color: '#00000000', padding: 0, borderRadius: 0 },
+    },
+    font: {
+      family: 'Montserrat',
+      size: 70,
+      weight: '800',
+      color: '#FFFFFF',
+      strokeColor: '#000000',
+      strokeWidth: 5,
+      highlightColor: '#FFD400',
+      highlightEffect: 'color',
+      uppercase: false,
+      italic: false,
+    },
+    emoji: { enabled: false, position: 'above', size: 52, animation: 'none', autoGenerate: false, overrides: {} },
+  },
   Subtitles: {
     subtitleStyle: {
       preset: 'Subtitles',
@@ -123,6 +200,30 @@ export const SUBTITLE_PRESETS: Record<string, PresetSettings> = {
     },
     emoji: { enabled: false, position: 'above', size: 48, animation: 'none', autoGenerate: false, overrides: {} },
   },
+  Minimal: {
+    subtitleStyle: {
+      preset: 'Minimal',
+      transition: 'fade',
+      splitMode: 'byWordCount',
+      splitValue: 4,
+      position: 'bottom',
+      positionOffsetY: 40,
+      background: { enabled: false, color: '#00000000', padding: 0, borderRadius: 0 },
+    },
+    font: {
+      family: 'Arial',
+      size: 56,
+      weight: '700',
+      color: '#FFFFFF',
+      strokeColor: '#000000',
+      strokeWidth: 3,
+      highlightColor: '#FFFFFF',
+      highlightEffect: 'color',
+      uppercase: false,
+      italic: false,
+    },
+    emoji: { enabled: false, position: 'above', size: 44, animation: 'none', autoGenerate: false, overrides: {} },
+  },
   Neon: {
     subtitleStyle: {
       preset: 'Neon',
@@ -147,12 +248,36 @@ export const SUBTITLE_PRESETS: Record<string, PresetSettings> = {
     },
     emoji: { enabled: true, position: 'above', size: 56, animation: 'spin', autoGenerate: true, overrides: {} },
   },
+  Cinematic: {
+    subtitleStyle: {
+      preset: 'Cinematic',
+      transition: 'fade',
+      splitMode: 'bySentence',
+      splitValue: 8,
+      position: 'bottom',
+      positionOffsetY: 0,
+      background: { enabled: true, color: '#00000099', padding: 8, borderRadius: 2 },
+    },
+    font: {
+      family: 'Georgia',
+      size: 54,
+      weight: '400',
+      color: '#F5F5F5',
+      strokeColor: '#000000',
+      strokeWidth: 1,
+      highlightColor: '#F5D06A',
+      highlightEffect: 'color',
+      uppercase: false,
+      italic: true,
+    },
+    emoji: { enabled: false, position: 'above', size: 44, animation: 'none', autoGenerate: false, overrides: {} },
+  },
 }
 
 export const DEFAULT_SETTINGS: EditorSettings = {
-  subtitleStyle: SUBTITLE_PRESETS.MrBeast.subtitleStyle,
-  font: SUBTITLE_PRESETS.MrBeast.font,
-  emoji: SUBTITLE_PRESETS.MrBeast.emoji,
+  subtitleStyle: SUBTITLE_PRESETS.Beast.subtitleStyle,
+  font: SUBTITLE_PRESETS.Beast.font,
+  emoji: SUBTITLE_PRESETS.Beast.emoji,
   crop: {
     x: (1 - (9 * 9) / (16 * 16)) / 2,
     width: (9 * 9) / (16 * 16),
@@ -164,4 +289,5 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   },
   trim: { start: 0, end: 0 },
   subtitleOffsetMs: 0,
+  videoFormat: '9:16',
 }

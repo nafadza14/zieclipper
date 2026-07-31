@@ -38,7 +38,6 @@ export interface Job {
   title?: string
   duration?: number
   thumbnailUrl?: string
-  videoPath?: string
   transcript?: WordTiming[]
   clips?: ClipSuggestion[]
   error?: string
@@ -65,6 +64,7 @@ export type HighlightEffect = 'color' | 'scale' | 'both'
 export type EmojiPosition = 'above' | 'below' | 'inline'
 export type EmojiAnimation = 'none' | 'bounce' | 'pop' | 'spin'
 export type CropBackground = 'blur' | 'black' | 'color'
+export type VideoFormat = '9:16' | '1:1' | '16:9'
 
 export interface SubtitleStyle {
   preset: string
@@ -125,4 +125,5 @@ export interface EditorSettings {
   crop: CropSettings
   trim: TrimSettings
   subtitleOffsetMs: number
+  videoFormat: VideoFormat
 }

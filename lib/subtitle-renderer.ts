@@ -1,7 +1,7 @@
 import type { SubtitleChunk, EditorSettings } from '@/store/types'
+import { getFormatDimensions } from '@/lib/formats'
+import { autoEmojiForText } from '@/lib/emoji-map'
 
-const CANVAS_W = 1080
-const CANVAS_H = 1920
 const LINE_HEIGHT_RATIO = 1.25
 
 function easeOutBack(t: number): number {
@@ -56,10 +56,11 @@ function layoutWords(
   ctx: CanvasRenderingContext2D,
   chunk: SubtitleChunk,
   settings: EditorSettings,
-  baseY: number
+  baseY: number,
+  canvasW: number
 ): WordLayout[][] {
   const { font } = settings
-  const lineMaxWidth = CANVAS_W - 80
+  const lineMaxWidth = canvasW - 80
   const fontSize = font.size
   const fontStr = `${font.italic ? 'italic ' : ''}${font.weight} ${fontSize}px "${font.family}"`
   ctx.font = fontStr
@@ -89,7 +90,7 @@ function layoutWords(
 
   lines.forEach((line, li) => {
     let totalLineW = line.reduce((s, w, i) => s + w.width + (i > 0 ? spaceWidth : 0), 0)
-    let x = (CANVAS_W - totalLineW) / 2
+    let x = (canvasW - totalLineW) / 2
     const y = baseY - totalH + (li + 1) * lineH
     line.forEach((w, wi) => {
       w.x = wi === 0 ? x : x
@@ -101,14 +102,15 @@ function layoutWords(
   return lines
 }
 
-function getBaseY(settings: EditorSettings): number {
+function getBaseY(settings: EditorSettings, canvasH: number): number {
   const { subtitleStyle } = settings
   const pos = subtitleStyle.position
   const offset = subtitleStyle.positionOffsetY
+  const margin = Math.round(180 * canvasH / 1920)
 
-  if (pos === 'top') return 300 + offset
-  if (pos === 'center') return CANVAS_H / 2 + offset
-  return CANVAS_H - 180 + offset
+  if (pos === 'top') return Math.round(300 * canvasH / 1920) + offset
+  if (pos === 'center') return canvasH / 2 + offset
+  return canvasH - margin + offset
 }
 
 export function renderSubtitlesAtTime(
@@ -120,6 +122,7 @@ export function renderSubtitlesAtTime(
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
+  const { width: CANVAS_W, height: CANVAS_H } = getFormatDimensions(settings.videoFormat)
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
 
   const chunk = chunks.find((c) => currentTime >= c.chunkStart && currentTime <= c.chunkEnd + 0.05)
@@ -136,8 +139,8 @@ export function renderSubtitlesAtTime(
   const fontStr = `${font.italic ? 'italic ' : ''}${font.weight} ${fontSize}px "${font.family}"`
   ctx.font = fontStr
 
-  const baseY = getBaseY(settings) + offsetY
-  const lines = layoutWords(ctx, chunk, settings, baseY)
+  const baseY = getBaseY(settings, CANVAS_H) + offsetY
+  const lines = layoutWords(ctx, chunk, settings, baseY, CANVAS_W)
 
   if (scale !== 1) {
     ctx.translate(CANVAS_W / 2, baseY)
@@ -214,6 +217,45 @@ export function renderSubtitlesAtTime(
       ctx.globalAlpha = alpha
     }
   })
+
+  // Emoji overlay (auto or per-chunk override). Browser canvas renders color
+  // emoji natively, so this is faithful in the preview. NOTE: burning emoji
+  // into the exported MP4 is handled separately (see ass-generator / export
+  // notes) because the bundled ffmpeg's libass can't draw color emoji.
+  const emoji = settings.emoji
+  if (emoji.enabled) {
+    const override = emoji.overrides?.[chunk.id]
+    const emojiStr = override || (emoji.autoGenerate ? autoEmojiForText(chunk.text) : null)
+    if (emojiStr) {
+      const lineH = fontSize * LINE_HEIGHT_RATIO
+      const totalTextH = lines.length * lineH
+      const cx = CANVAS_W / 2
+      let ey: number
+      if (emoji.position === 'below') ey = baseY + emoji.size * 1.1
+      else if (emoji.position === 'inline') ey = baseY
+      else ey = baseY - totalTextH - emoji.size * 0.2 // 'above'
+
+      const elapsed = currentTime - chunk.chunkStart
+      let scale = 1, dy = 0, rot = 0
+      if (emoji.animation === 'pop' && elapsed < 0.25) {
+        scale = 0.8 + 0.2 * easeOutBack(elapsed / 0.25)
+      } else if (emoji.animation === 'bounce') {
+        dy = -Math.abs(Math.sin(elapsed * 6)) * emoji.size * 0.15
+      } else if (emoji.animation === 'spin' && elapsed < 0.5) {
+        rot = (1 - elapsed / 0.5) * Math.PI * 2
+      }
+
+      ctx.save()
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'alphabetic'
+      ctx.font = `${emoji.size}px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif`
+      ctx.translate(cx, ey + dy)
+      if (scale !== 1) ctx.scale(scale, scale)
+      if (rot !== 0) ctx.rotate(rot)
+      ctx.fillText(emojiStr, 0, 0)
+      ctx.restore()
+    }
+  }
 
   ctx.restore()
 }

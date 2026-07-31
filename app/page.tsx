@@ -27,28 +27,57 @@ export default function HomePage() {
     e.preventDefault()
     if (!url.trim()) return
     setLoading(true); setError(null); setStep('starting…'); setPct(5)
+
+    // The whole download -> transcript -> AI-analysis pipeline now runs
+    // inside this one POST /api/download call (no separate worker that can
+    // keep working after a response goes out -- see app/api/download/route.ts).
+    // So the jobId is generated here, on the client, and polling starts
+    // immediately in parallel with the POST -- that's what keeps the
+    // progress bar moving instead of freezing on "starting…" for the whole
+    // 30-90s the request is in flight.
+    const jobId = crypto.randomUUID()
+    let downloadError: string | null = null
+
+    const downloadPromise = fetch('/api/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jobId,
+        url: url.trim(),
+        model: 'gpt-4o-mini',
+        provider: 'sumopod',
+      }),
+    }).then(async (res) => {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        downloadError = data.error || 'failed to process video'
+      }
+    }).catch((err) => {
+      downloadError = err.message || 'network error while starting the job'
+    })
+
     try {
-      const res = await fetch('/api/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: url.trim(),
-          model: 'gpt-4o-mini',
-          provider: 'sumopod',
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'failed to start')
-      await pollJob(data.jobId)
+      await pollJob(jobId, () => downloadError)
     } catch (err: any) {
       setError(err.message); setLoading(false); setStep(null); setPct(0)
+    } finally {
+      // Make sure the request settles even if pollJob already returned/threw.
+      downloadPromise.catch(() => {})
     }
   }
 
-  async function pollJob(jobId: string) {
+  async function pollJob(jobId: string, getDownloadError: () => string | null) {
     for (let i = 0; i < 300; i++) {
       await new Promise((r) => setTimeout(r, 2000))
       const res = await fetch(`/api/jobs/${jobId}`)
+      if (res.status === 404) {
+        // The POST may not have inserted the row yet, or it failed before
+        // it could -- if we already know it failed, surface that instead
+        // of waiting out the full timeout on repeated 404s.
+        const failMsg = getDownloadError()
+        if (failMsg) throw new Error(failMsg)
+        continue
+      }
       const job = await res.json()
       if (!res.ok) throw new Error(job.error || 'job lost (server restarted?)')
       const s = STEPS[job.status]
@@ -56,7 +85,8 @@ export default function HomePage() {
       if (job.status === 'ready') { router.push(`/clips/${jobId}`); return }
       if (job.status === 'error') throw new Error(job.error || 'processing failed')
     }
-    throw new Error('timed out')
+    const failMsg = getDownloadError()
+    throw new Error(failMsg || 'timed out')
   }
 
   return (

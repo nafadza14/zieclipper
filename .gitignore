@@ -56,6 +56,10 @@ dist/
 # tmp / uploads
 /tmp/
 
+# yt-dlp binary -- fetched by scripts/fetch-ytdlp.js during `npm install`
+# on Vercel (postinstall), not committed. See server/binaries.ts.
+/bin/
+
 # flat copies created during scaffold (duplicate dirs)
 apiservices/
 appapidownload/

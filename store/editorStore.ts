@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 import type {
   WordTiming, SubtitleChunk, ClipSuggestion, EditorSettings,
-  SubtitleStyle, FontSettings, EmojiSettings, CropSettings, TrimSettings
+  SubtitleStyle, FontSettings, EmojiSettings, CropSettings, TrimSettings, VideoFormat
 } from './types'
 import { SUBTITLE_PRESETS, DEFAULT_SETTINGS } from '@/components/editor/presets/SubtitlePresets'
 import { parseChunks } from '@/lib/subtitle-parser'
@@ -22,6 +22,7 @@ interface EditorState {
   updateEmoji: (partial: Partial<EmojiSettings>) => void
   updateCrop: (partial: Partial<CropSettings>) => void
   updateTrim: (partial: Partial<TrimSettings>) => void
+  updateFormat: (format: VideoFormat) => void
   updateSubtitleChunkText: (id: number, text: string) => void
   setSubtitleOffset: (ms: number) => void
   setEmojiOverride: (chunkIdx: number, emoji: string) => void
@@ -87,6 +88,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       settings: { ...state.settings, trim: { ...state.settings.trim, ...partial } },
     }))
+  },
+
+  updateFormat: (format) => {
+    set((state) => ({ settings: { ...state.settings, videoFormat: format } }))
   },
 
   updateSubtitleChunkText: (id, text) => {

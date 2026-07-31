@@ -1,18 +1,20 @@
 import { spawn } from 'child_process'
-import { ensureBinaries } from './binaries'
+import { getBinaries } from './binaries'
 
+// Ported from worker/src/ffmpeg-processor.ts, unchanged -- getBinaries()
+// already resolves correctly for both Vercel (bundled binaries) and local
+// dev (PATH), see server/binaries.ts.
 export function runFFmpeg(
   args: string[],
   onProgress?: (progress: number) => void,
   durationSeconds?: number
 ): Promise<void> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const { ffmpeg } = await ensureBinaries()
-      const proc = spawn(ffmpeg, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      })
+  return new Promise((resolve, reject) => {
+    const { ffmpeg } = getBinaries()
+    const proc = spawn(ffmpeg, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
 
     let stderrBuf = ''
 
@@ -45,22 +47,18 @@ export function runFFmpeg(
     proc.on('error', (err) => {
       reject(new Error(`Failed to spawn FFmpeg: ${err.message}`))
     })
-    } catch (err: any) {
-      reject(err)
-    }
   })
 }
 
 export function probeVideoDuration(filePath: string): Promise<number> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const { ffprobe } = await ensureBinaries()
-      const proc = spawn(ffprobe, [
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_format',
-        filePath,
-      ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  return new Promise((resolve) => {
+    const { ffprobe } = getBinaries()
+    const proc = spawn(ffprobe, [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_format',
+      filePath,
+    ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
 
     let out = ''
     proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
@@ -76,8 +74,6 @@ export function probeVideoDuration(filePath: string): Promise<number> {
         resolve(0)
       }
     })
-    } catch (err) {
-      resolve(0)
-    }
+    proc.on('error', () => resolve(0))
   })
 }

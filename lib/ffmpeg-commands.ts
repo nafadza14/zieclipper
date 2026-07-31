@@ -1,4 +1,5 @@
 import type { EditorSettings } from '@/store/types'
+import { getFormatDimensions } from '@/lib/formats'
 
 export interface ExportCommandOptions {
   sourcePath: string
@@ -18,19 +19,27 @@ export function buildExportArgs(opts: ExportCommandOptions): string[] {
 
   const assForward = assPath.replace(/\\/g, '/').replace(/:/g, '\\:')
 
+  // Target output dimensions come from the chosen aspect ratio (9:16, 1:1,
+  // 16:9) instead of the old hard-coded 1080x1920. The ass filter renders the
+  // subtitles at these same dimensions (see lib/ass-generator.ts), so the two
+  // always agree.
+  const { width: TW, height: TH } = getFormatDimensions(settings.videoFormat)
+
   if (crop.style === 'fit') {
+    // Fit/letterbox: whole landscape frame centered inside the target box,
+    // empty space filled by the chosen background.
     let bgChain = ''
     if (crop.background === 'blur') {
-      bgChain = `[0:v]scale=-2:1920,crop=1080:1920,boxblur=40:10[bg]`
+      bgChain = `[0:v]scale=${TW}:${TH}:force_original_aspect_ratio=increase,crop=${TW}:${TH},boxblur=40:10[bg]`
     } else if (crop.background === 'color') {
-      bgChain = `color=c=${crop.backgroundColor}:s=1080x1920[bg]`
+      bgChain = `color=c=${crop.backgroundColor}:s=${TW}x${TH}[bg]`
     } else { // black
-      bgChain = `color=c=black:s=1080x1920[bg]`
+      bgChain = `color=c=black:s=${TW}x${TH}[bg]`
     }
 
     const filterComplex = [
       bgChain,
-      `[0:v]scale=1080:-2[fg]`,
+      `[0:v]scale=${TW}:${TH}:force_original_aspect_ratio=decrease[fg]`,
       `[bg][fg]overlay=(W-w)/2:(H-h)/2,ass='${assForward}'[out]`
     ].join(';')
 
@@ -52,18 +61,15 @@ export function buildExportArgs(opts: ExportCommandOptions): string[] {
     ]
   }
 
-  // Build video filter chain for 'fill' mode (Fullscreen Crop)
+  // Fill/crop: crop the source to the target aspect ratio (keeping full
+  // height), pan horizontally via crop.x, then scale to the exact target
+  // dimensions. cropW = ih * (TW/TH) stays <= iw for any target AR narrower
+  // than or equal to the 16:9 source, which is always the case here.
   const filters: string[] = []
-
-  // Dynamically calculate crop width (cw) for 9:16 aspect ratio relative to input height,
-  // and crop X coordinate based on crop.x slider percentage.
-  // Use even integer truncation for H.264 compatibility.
-  const cropWExpr = 'trunc(ih*9/16/2)*2'
+  const cropWExpr = `trunc(ih*${TW}/${TH}/2)*2`
   const cropXExpr = `trunc((iw-${cropWExpr})*${crop.x}/2)*2`
   filters.push(`crop=${cropWExpr}:ih:${cropXExpr}:0`)
-
-  // Scale to 1080x1920
-  filters.push('scale=1080:1920:flags=lanczos')
+  filters.push(`scale=${TW}:${TH}:flags=lanczos`)
   filters.push(`ass='${assForward}'`)
 
   return [
@@ -88,27 +94,6 @@ export function buildThumbnailArgs(sourcePath: string, timestamp: number, output
     '-i', sourcePath,
     '-vframes', '1',
     '-q:v', '3',
-    '-y',
-    outputPath,
-  ]
-}
-
-export function buildSegmentArgs(sourcePath: string, start: number, end: number, outputPath: string): string[] {
-  return [
-    '-ss', String(start),
-    '-to', String(end),
-    '-i', sourcePath,
-    '-c', 'copy',
-    '-y',
-    outputPath,
-  ]
-}
-
-export function buildWaveformArgs(sourcePath: string, outputPath: string): string[] {
-  return [
-    '-i', sourcePath,
-    '-filter_complex', 'showwavespic=s=800x80:colors=white',
-    '-frames:v', '1',
     '-y',
     outputPath,
   ]

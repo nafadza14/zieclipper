@@ -1,6 +1,7 @@
 'use client'
 import { useRef, useState, useCallback } from 'react'
 import { useEditorStore } from '@/store/editorStore'
+import { VIDEO_FORMATS, cropWidthRatio } from '@/lib/formats'
 
 const BACKGROUND_OPTIONS = [
   { value: 'blur', label: 'Blur Background' },
@@ -9,7 +10,7 @@ const BACKGROUND_OPTIONS = [
 ] as const
 
 export function CropPanel({ jobId }: { jobId: string }) {
-  const { settings, updateCrop, clip } = useEditorStore()
+  const { settings, updateCrop, updateFormat, clip, clipIndex } = useEditorStore()
   const { crop } = settings
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -17,8 +18,10 @@ export function CropPanel({ jobId }: { jobId: string }) {
   const [dragStartX, setDragStartX] = useState(0)
   const [dragStartCropX, setDragStartCropX] = useState(0)
 
-  // In a 16:9 preview container, a 9:16 portrait strip occupies (9/16)^2 of the width
-  const CROP_WIDTH_RATIO = (9 * 9) / (16 * 16) // ≈ 0.3164
+  // Fraction of the 16:9 source width the chosen aspect ratio keeps visible
+  // (9:16 ≈ 0.316, 1:1 ≈ 0.5625, 16:9 = 1.0). Drives the draggable crop box.
+  const CROP_WIDTH_RATIO = cropWidthRatio(settings.videoFormat)
+  const canPan = CROP_WIDTH_RATIO < 1
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     setDragging(true)
@@ -37,7 +40,9 @@ export function CropPanel({ jobId }: { jobId: string }) {
 
   const handleMouseUp = useCallback(() => setDragging(false), [])
 
-  const thumbUrl = clip ? `/api/thumbnail/${jobId}/0` : null
+  // Was hardcoded to clip index 0 regardless of which clip is actually
+  // open in the editor -- fixed to use the real index.
+  const thumbUrl = clip && clipIndex !== null ? `/api/thumbnail/${jobId}/${clipIndex}` : null
   const cropBoxLeft = `${crop.x * 100}%`
   const cropBoxWidth = `${CROP_WIDTH_RATIO * 100}%`
 
@@ -45,6 +50,30 @@ export function CropPanel({ jobId }: { jobId: string }) {
 
   return (
     <div className="space-y-6">
+      {/* Aspect ratio */}
+      <div>
+        <label className="text-xs text-neutral-400 uppercase tracking-wider mb-2 block font-medium">Aspect Ratio</label>
+        <div className="flex gap-2">
+          {VIDEO_FORMATS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => updateFormat(f.value)}
+              title={f.hint}
+              className={`flex-1 py-3 rounded-xl border font-semibold text-xs transition ${
+                settings.videoFormat === f.value
+                  ? 'border-white bg-white text-black'
+                  : 'border-neutral-800 bg-[#121212] text-neutral-400 hover:border-neutral-700'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[10px] text-neutral-500 mt-1.5 text-center">
+          {VIDEO_FORMATS.find((f) => f.value === settings.videoFormat)?.hint}
+        </div>
+      </div>
+
       {/* Template / Style Selection */}
       <div>
         <label className="text-xs text-neutral-400 uppercase tracking-wider mb-2 block font-medium">Template Frame Style</label>
@@ -94,7 +123,7 @@ export function CropPanel({ jobId }: { jobId: string }) {
                 onMouseDown={handleMouseDown}
               >
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="bg-white/10 text-white text-xs px-2.5 py-1 rounded backdrop-blur-sm border border-white/20 font-medium">9:16</div>
+                  <div className="bg-white/10 text-white text-xs px-2.5 py-1 rounded backdrop-blur-sm border border-white/20 font-medium">{settings.videoFormat}</div>
                 </div>
               </div>
               {/* Darken outside crop */}
@@ -104,19 +133,21 @@ export function CropPanel({ jobId }: { jobId: string }) {
             </div>
           </div>
 
-          {/* Fine tune slider */}
-          <div>
-            <label className="text-xs text-neutral-400 uppercase tracking-wider mb-2 block font-medium">Horizontal Fine-Tune</label>
-            <input
-              type="range"
-              min={0}
-              max={Math.round((1 - CROP_WIDTH_RATIO) * 1000)}
-              value={Math.round(crop.x * 1000)}
-              onChange={(e) => updateCrop({ x: parseInt(e.target.value) / 1000 })}
-              className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer"
-            />
-            <div className="text-xs text-neutral-500 mt-1.5 text-center">{Math.round(crop.x * 100)}% from left</div>
-          </div>
+          {/* Fine tune slider — only meaningful when there's width to pan across */}
+          {canPan && (
+            <div>
+              <label className="text-xs text-neutral-400 uppercase tracking-wider mb-2 block font-medium">Horizontal Fine-Tune</label>
+              <input
+                type="range"
+                min={0}
+                max={Math.round((1 - CROP_WIDTH_RATIO) * 1000)}
+                value={Math.round(crop.x * 1000)}
+                onChange={(e) => updateCrop({ x: parseInt(e.target.value) / 1000 })}
+                className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="text-xs text-neutral-500 mt-1.5 text-center">{Math.round(crop.x * 100)}% from left</div>
+            </div>
+          )}
         </>
       ) : (
         <>

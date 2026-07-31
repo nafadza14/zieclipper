@@ -1,39 +1,72 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { nanoid } from 'nanoid'
 import path from 'path'
 import os from 'os'
+import { requireUser } from '@/lib/supabase-server'
+import { extractVideoId } from '@/server/youtube'
 import { downloadSubtitlesAndMetadata } from '@/server/ytdlp-service'
-import { createJob, updateJob } from '@/server/job-manager'
-import { extractVideoId } from '@/lib/youtube'
-import type { SubtitleOption } from '@/store/types'
+import { buildAvailableSubtitles } from '@/server/subtitles'
+import { parseVttWords } from '@/server/transcript-parser'
+import { analyzeTranscript } from '@/server/analyzer'
 
-const TMP_DIR = path.join(os.tmpdir(), 'zieclipper', 'jobs')
+// Hobby plan caps a Function at 300s; Pro/Enterprise can raise this up to
+// 800s (or 1800s on the "extended maximum" beta) via vercel.json / project
+// settings -- see DEPLOY-VERCEL-SUPABASE.md. Long videos WILL exceed 300s on
+// Hobby; that's a real, disclosed limitation of the pure-Vercel path.
+export const maxDuration = 300
 
+const TMP_DIR = path.join(/* turbopackIgnore: true */ os.tmpdir(), 'zieclipper', 'jobs')
+
+// Runs the entire download -> subtitles -> transcript -> AI-analysis
+// pipeline synchronously in one invocation and only returns once it's
+// done (or has failed). There is no "respond now, keep working after" on
+// Vercel -- an instance can freeze right after a response goes out -- so
+// unlike the old worker, this request stays open for the whole pipeline.
+//
+// The client is expected to generate `jobId` itself (crypto.randomUUID())
+// and start polling GET /api/jobs/:jobId with that same id concurrently
+// with this POST, so the UI still gets live progress from the Supabase row
+// updates below even though this request doesn't return until the end.
 export async function POST(req: NextRequest) {
-  const { url, model, provider, target_duration, language } = await req.json()
+  const auth = await requireUser()
+  if ('error' in auth) return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
 
+  const body = await req.json().catch(() => ({}))
+  const { jobId, url, model, provider, target_duration, language } = body || {}
+
+  if (!jobId) return NextResponse.json({ error: 'jobId required' }, { status: 400 })
   if (!url) return NextResponse.json({ error: 'URL required' }, { status: 400 })
 
   const videoId = extractVideoId(url)
   if (!videoId) return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 })
 
-  const jobId = nanoid()
+  const chosenModel = model || 'claude-sonnet-4-6'
+  const chosenProvider = provider || 'anthropic'
+
+  const { error: insertErr } = await auth.supabase.from('jobs').insert({
+    id: jobId,
+    user_id: auth.user.id,
+    url,
+    model: chosenModel,
+    provider: chosenProvider,
+    status: 'downloading',
+  })
+  if (insertErr) {
+    return NextResponse.json({ error: `Failed to create job: ${insertErr.message}` }, { status: 500 })
+  }
+
   const outputDir = path.join(TMP_DIR, jobId)
 
-  createJob(jobId, url, model || 'claude-sonnet-4-6', provider || 'anthropic')
-  updateJob(jobId, { status: 'transcribing' })
+  try {
+    await auth.supabase.from('jobs').update({ status: 'transcribing' }).eq('id', jobId)
 
-  downloadSubtitlesAndMetadata(url, outputDir).then(async ({ title, duration, vttFiles }) => {
-    updateJob(jobId, { title, duration })
+    const { title, duration, vttFiles, infoJsonPath } = await downloadSubtitlesAndMetadata(url, outputDir)
+    await auth.supabase.from('jobs').update({ title, duration }).eq('id', jobId)
 
-    // Build availableSubtitles: merge VTT files with YouTube API transcript list
-    const availableSubtitles = await buildAvailableSubtitles(videoId, vttFiles)
-    updateJob(jobId, { availableSubtitles })
+    const availableSubtitles = buildAvailableSubtitles(vttFiles, infoJsonPath)
+    await auth.supabase.from('jobs').update({ available_subtitles: availableSubtitles }).eq('id', jobId)
 
-    // Select the best default subtitle language: prefer Indonesian, then English, then others.
     let defaultLang = Object.keys(vttFiles)[0]
     let defaultVtt = Object.values(vttFiles)[0]
-
     const priorityLangs = ['id', 'en', 'ms']
     for (const pl of priorityLangs) {
       const matchKey = Object.keys(vttFiles).find(
@@ -46,147 +79,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Determine target output language based on the chosen transcript language
+    if (!defaultVtt) {
+      throw new Error('No subtitles or captions (manual or auto-generated) are available for this video, so no transcript can be built.')
+    }
+
     let targetLang = 'English'
     if (defaultLang && (defaultLang.toLowerCase().startsWith('id') || defaultLang.toLowerCase().startsWith('ms'))) {
       targetLang = 'Indonesian'
     }
 
-    return fetchTranscriptAndAnalyze(
-      jobId,
-      videoId,
-      undefined,
-      model,
-      provider || 'anthropic',
-      defaultVtt,
-      defaultLang,
+    const transcript = parseVttWords(defaultVtt)
+    await auth.supabase.from('jobs').update({
+      transcript,
+      status: 'analyzing',
+      active_subtitle_lang: defaultLang,
+    }).eq('id', jobId)
+
+    const clips = await analyzeTranscript(
+      transcript,
+      chosenModel,
+      chosenProvider,
       language || targetLang,
-      target_duration || 'auto'
+      target_duration || 'auto',
     )
-  }).catch((err) => {
-    updateJob(jobId, { status: 'error', error: err.message })
-  })
 
-  return NextResponse.json({ jobId })
-}
+    await auth.supabase.from('jobs').update({ clips, status: 'ready' }).eq('id', jobId)
 
-async function buildAvailableSubtitles(
-  videoId: string,
-  vttFiles: Record<string, string>,
-): Promise<SubtitleOption[]> {
-  const pythonUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:8002'
-
-  // Fetch YouTube transcript list for names + is_generated flags
-  let ytLangs: Array<{ code: string; name: string; is_generated: boolean }> = []
-  try {
-    const res = await fetch(`${pythonUrl}/available-transcripts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ video_id: videoId }),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      ytLangs = data.languages ?? []
-    }
-  } catch {}
-
-  // Build map from YouTube data for quick lookup
-  const ytMap = new Map(ytLangs.map((l) => [l.code, l]))
-
-  const result: SubtitleOption[] = []
-  const seen = new Set<string>()
-
-  // VTT files first (auto-generated, highest quality timing)
-  for (const [code, vttPath] of Object.entries(vttFiles)) {
-    const yt = ytMap.get(code)
-    result.push({
-      code,
-      name: yt?.name ?? langName(code),
-      is_generated: yt?.is_generated ?? true,
-      vttPath,
-    })
-    seen.add(code)
-  }
-
-  // Add any YouTube entries not covered by VTTs (manual subs)
-  for (const lang of ytLangs) {
-    if (!seen.has(lang.code)) {
-      result.push({ code: lang.code, name: lang.name, is_generated: lang.is_generated })
-    }
-  }
-
-  // Sort: auto-generated first, then by name
-  result.sort((a, b) => {
-    if (a.is_generated !== b.is_generated) return a.is_generated ? -1 : 1
-    return a.name.localeCompare(b.name)
-  })
-
-  return result
-}
-
-function langName(code: string): string {
-  try {
-    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code
-  } catch {
-    return code
-  }
-}
-
-async function fetchTranscriptAndAnalyze(
-  jobId: string,
-  videoId: string,
-  videoPath: string | undefined,
-  model: string,
-  provider: string,
-  vttPath?: string,
-  preferredLang?: string,
-  language?: string,
-  targetDuration?: string,
-) {
-  const pythonUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:8002'
-
-  try {
-    const tRes = await fetch(`${pythonUrl}/transcript`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        video_id: videoId,
-        audio_path: videoPath,
-        vtt_path: vttPath,
-        preferred_lang: preferredLang,
-      }),
-    })
-
-    if (!tRes.ok) {
-      let detail = tRes.statusText
-      try { detail = (await tRes.json()).detail ?? detail } catch {}
-      throw new Error(`Transcript service error: ${detail}`)
-    }
-    const { transcript } = await tRes.json()
-    updateJob(jobId, { transcript, status: 'analyzing', activeSubtitleLang: preferredLang })
-
-    const aRes = await fetch(`${pythonUrl}/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        transcript,
-        model,
-        provider,
-        video_duration: 0,
-        language: language ?? 'English',
-        target_duration: targetDuration ?? 'auto'
-      }),
-    })
-
-    if (!aRes.ok) {
-      let detail = aRes.statusText
-      try { detail = (await aRes.json()).detail ?? detail } catch {}
-      throw new Error(`Analysis service error: ${detail}`)
-    }
-    const { clips } = await aRes.json()
-
-    updateJob(jobId, { clips, status: 'ready' })
+    return NextResponse.json({ jobId, status: 'ready' })
   } catch (err: any) {
-    updateJob(jobId, { status: 'error', error: err.message })
+    await auth.supabase.from('jobs').update({ status: 'error', error: err.message }).eq('id', jobId).then(() => {}, () => {})
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

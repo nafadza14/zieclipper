@@ -2,6 +2,7 @@
 import { useRef, useEffect } from 'react'
 import { useVideoSync } from '@/hooks/useVideoSync'
 import type { SubtitleChunk, EditorSettings } from '@/store/types'
+import { getFormatCss, cropWidthRatio } from '@/lib/formats'
 
 interface Props {
   jobId: string
@@ -21,10 +22,12 @@ export function VideoPlayer({ jobId, clipStart, clipEnd, chunks, settings }: Pro
   const src = `/api/video/${jobId}?start=${clipStart}&end=${clipEnd}`
   const { crop } = settings
   const cropStyle = crop.style || 'fill'
-  const CROP_WIDTH_RATIO = (9 * 9) / (16 * 16) // ≈ 0.3164
+  const CROP_WIDTH_RATIO = cropWidthRatio(settings.videoFormat)
 
-  // Calculate object-position for cover mode
-  const objectPosition = cropStyle === 'fill'
+  // Calculate object-position for cover mode. When the target is 16:9 the whole
+  // width is visible (ratio == 1), so there's no horizontal pan and we avoid a
+  // divide-by-zero by centering.
+  const objectPosition = cropStyle === 'fill' && CROP_WIDTH_RATIO < 1
     ? `${(crop.x / (1 - CROP_WIDTH_RATIO)) * 100}% center`
     : 'center center'
 
@@ -73,9 +76,9 @@ export function VideoPlayer({ jobId, clipStart, clipEnd, chunks, settings }: Pro
     <div
       className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/80 ring-1 ring-white/[0.08]"
       style={{
-        aspectRatio: '9/16',
+        aspectRatio: getFormatCss(settings.videoFormat),
         width: '100%',
-        maxWidth: '340px',
+        maxWidth: settings.videoFormat === '16:9' ? '600px' : settings.videoFormat === '1:1' ? '440px' : '340px',
         margin: '0 auto',
         backgroundColor: containerBg,
       }}

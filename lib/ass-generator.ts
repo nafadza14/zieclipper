@@ -1,4 +1,5 @@
 import type { SubtitleChunk, EditorSettings, SubtitleStyle } from '@/store/types'
+import { getFormatDimensions } from '@/lib/formats'
 
 // Parse a CSS color (#RGB, #RRGGBB, #RRGGBBAA or rgba()/rgb()) into components.
 // Defensive: invalid input falls back to opaque black instead of emitting a
@@ -55,11 +56,12 @@ function t(s: number) { return secondsToAssTime(s) }
 
 // Y pixel where the text anchor sits (matches canvas getBaseY logic).
 // Used by \move and \pos tags for slide transition.
-function getRenderY(subtitleStyle: SubtitleStyle): number {
+function getRenderY(subtitleStyle: SubtitleStyle, height: number): number {
   const { position, positionOffsetY } = subtitleStyle
-  if (position === 'top') return Math.max(40, 180 + positionOffsetY)
-  if (position === 'center') return 960 + positionOffsetY
-  return 1920 - Math.max(40, 180 - positionOffsetY)
+  const margin = Math.round(180 * height / 1920)
+  if (position === 'top') return Math.max(40, margin + positionOffsetY)
+  if (position === 'center') return Math.round(height / 2) + positionOffsetY
+  return height - Math.max(40, margin - positionOffsetY)
 }
 
 // Returns the ASS inline override prefix for a segment within a chunk.
@@ -71,7 +73,8 @@ function segmentPrefix(
   isLast: boolean,
   segStart: number,
   segEnd: number,
-  renderY: number
+  renderY: number,
+  centerX: number
 ): string {
   // Cap fade to 40 % of event duration so short events stay visible.
   const durMs = Math.max(50, Math.round((segEnd - segStart) * 1000))
@@ -88,8 +91,8 @@ function segmentPrefix(
     case 'slide': {
       const moveDur = Math.min(200, durMs)
       const fadeDur = Math.min(150, maxFade)
-      if (isFirst) return `{\\move(540,${renderY + 30},540,${renderY},0,${moveDur})\\fad(${fadeDur},0)}`
-      return `{\\pos(540,${renderY})}`
+      if (isFirst) return `{\\move(${centerX},${renderY + 30},${centerX},${renderY},0,${moveDur})\\fad(${fadeDur},0)}`
+      return `{\\pos(${centerX},${renderY})}`
     }
     case 'pop': {
       if (!isFirst) return ''
@@ -109,14 +112,18 @@ export function generateAssFile(chunks: SubtitleChunk[], settings: EditorSetting
   const transition = subtitleStyle.transition
   const bg = subtitleStyle.background
 
+  const { width: playResX, height: playResY } = getFormatDimensions(settings.videoFormat)
+  const centerX = Math.round(playResX / 2)
+  const margin = Math.round(180 * playResY / 1920)
+
   let alignment = 2
   if (subtitleStyle.position === 'top') alignment = 8
   else if (subtitleStyle.position === 'center') alignment = 5
 
   const marginV = subtitleStyle.position === 'bottom'
-    ? Math.max(40, 180 - subtitleStyle.positionOffsetY)
+    ? Math.max(40, margin - subtitleStyle.positionOffsetY)
     : subtitleStyle.position === 'top'
-    ? Math.max(40, 180 + subtitleStyle.positionOffsetY)
+    ? Math.max(40, margin + subtitleStyle.positionOffsetY)
     : 0
 
   const primaryColor = hexToAss(font.color)
@@ -127,7 +134,7 @@ export function generateAssFile(chunks: SubtitleChunk[], settings: EditorSetting
   const useHighlightColor = font.highlightEffect === 'color' || font.highlightEffect === 'both'
   const useHighlightScale = font.highlightEffect === 'scale' || font.highlightEffect === 'both'
   const usePerWordHighlight = useHighlightColor || useHighlightScale
-  const renderY = getRenderY(subtitleStyle)
+  const renderY = getRenderY(subtitleStyle, playResY)
 
   const defaultStyle = `Style: Default,${font.family},${font.size},${primaryColor},${highlightColor},${outlineColor},&H00000000,${bold},${italic},0,0,100,100,0,0,1,${font.strokeWidth},0,${alignment},40,40,${marginV},1`
 
@@ -143,8 +150,8 @@ export function generateAssFile(chunks: SubtitleChunk[], settings: EditorSetting
 
   const header = `[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: ${playResX}
+PlayResY: ${playResY}
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
@@ -285,7 +292,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`
     // Attach transition prefixes based on each segment's position in the chunk
     for (let si = 0; si < segs.length; si++) {
       const { start, end, text } = segs[si]
-      const prefix = segmentPrefix(transition, si === 0, si === segs.length - 1, start, end, renderY)
+      const prefix = segmentPrefix(transition, si === 0, si === segs.length - 1, start, end, renderY, centerX)
       events.push(`Dialogue: ${textLayer},${t(start)},${t(end)},Default,,0,0,0,,${prefix}${text}`)
     }
   }

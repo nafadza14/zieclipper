@@ -37,26 +37,34 @@ export function ExportPanel() {
   const isError = exportJob?.status === 'error'
   const progress = exportJob?.progress ?? 0
 
-  async function startExport() {
+  function startExport() {
     if (!jobId || clipIndex === null) return
-    setStarting(true)
     setError(null)
     setMetadata(null)
 
-    try {
-      const res = await fetch('/api/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, clipIndex, settings, subtitleChunks }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Export failed')
-      setExportId(data.exportId)
-    } catch (e: any) {
+    // POST /api/export now runs the whole ffmpeg render synchronously and
+    // doesn't return until it's done, so the exportId is generated here and
+    // polling (useExportJob below) starts right away instead of waiting on
+    // this fetch -- otherwise the progress bar would just sit at 0% for the
+    // entire export.
+    const newExportId = crypto.randomUUID()
+    setExportId(newExportId)
+    setStarting(true)
+
+    fetch('/api/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exportId: newExportId, jobId, clipIndex, settings, subtitleChunks }),
+    }).then(async (res) => {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error || 'Export failed')
+        setExportId(null)
+      }
+    }).catch((e) => {
       setError(e.message)
-    } finally {
-      setStarting(false)
-    }
+      setExportId(null)
+    }).finally(() => setStarting(false))
   }
 
   async function generateMetadata() {
@@ -139,7 +147,7 @@ export function ExportPanel() {
           disabled={starting || isProcessing}
           className="w-full py-3 rounded-xl bg-white hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition"
         >
-          {starting ? 'Starting...' : isProcessing ? `Exporting ${progress}%...` : 'Export Short'}
+          {isProcessing ? `Exporting ${progress}%...` : starting ? 'Starting...' : 'Export Short'}
         </button>
       )}
 

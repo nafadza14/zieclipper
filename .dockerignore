@@ -1,7 +1,0 @@
-node_modules
-.next
-.git
-tmp
-*.log
-.env.local
-LAPORAN-QA.md

@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react'
 import type { SubtitleChunk, EditorSettings } from '@/store/types'
 import { renderSubtitlesAtTime } from '@/lib/subtitle-renderer'
+import { getFormatDimensions } from '@/lib/formats'
 
 export function useVideoSync(
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -22,8 +23,9 @@ export function useVideoSync(
     const canvas = canvasRef.current
     if (!video || !canvas) return
 
-    canvas.width = 1080
-    canvas.height = 1920
+    const { width, height } = getFormatDimensions(settingsRef.current.videoFormat)
+    canvas.width = width
+    canvas.height = height
 
     function render() {
       const v = videoRef.current
@@ -41,5 +43,7 @@ export function useVideoSync(
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [videoRef, canvasRef, clipStartTime])
+    // settings.videoFormat is in deps so the canvas is resized when the user
+    // switches aspect ratio (the ref alone wouldn't re-trigger this effect).
+  }, [videoRef, canvasRef, clipStartTime, settings.videoFormat])
 }

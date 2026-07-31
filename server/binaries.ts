@@ -1,81 +1,48 @@
-import fs from 'fs'
 import path from 'path'
-import os from 'os'
-import { execSync } from 'child_process'
+import fs from 'fs'
 
-const BIN_DIR = path.join(os.tmpdir(), 'zieclipper-bin')
+// On Vercel: yt-dlp is the standalone Linux binary fetched at build time by
+// scripts/fetch-ytdlp.js into bin/, bundled into the function via
+// next.config.ts's outputFileTracingIncludes. ffmpeg/ffprobe come from
+// @ffmpeg-installer/@ffprobe-installer -- statically-linked binaries
+// shipped as npm packages, which Next.js's build already traces and
+// bundles automatically since they're required() here.
+//
+// Locally (not on Vercel): fall back to whatever's on PATH, same as the
+// original setup -- `pip install yt-dlp` / your OS package manager for
+// ffmpeg. The bundled Linux binary won't run on macOS/Windows anyway.
+const isVercel = !!process.env.VERCEL
+const BUNDLED_YTDLP = path.join(process.cwd(), 'bin', 'yt-dlp_linux')
 
-const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp'
-const FFMPEG_URL = 'https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-linux-64.zip'
-const FFPROBE_URL = 'https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffprobe-4.4.1-linux-64.zip'
+export function getBinaries(): { ytdlp: string; ffmpeg: string; ffprobe: string } {
+  let ffmpeg = process.env.FFMPEG_PATH || ''
+  let ffprobe = process.env.FFPROBE_PATH || ''
 
-async function downloadFile(url: string, destPath: string) {
-  console.log(`Downloading ${url} to ${destPath}...`)
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Failed to download ${url}: ${res.statusText}`)
-  const buffer = Buffer.from(await res.arrayBuffer())
-  fs.writeFileSync(destPath, buffer)
-}
+  if (!ffmpeg) {
+    // require() here (not a static import) so this still resolves correctly
+    // whether or not FFMPEG_PATH is set, and so a missing package fails
+    // with a clear error only when actually needed.
+    ffmpeg = require('@ffmpeg-installer/ffmpeg').path
+  }
+  if (!ffprobe) {
+    ffprobe = require('@ffprobe-installer/ffprobe').path
+  }
 
-export async function ensureBinaries(): Promise<{ ytdlp: string; ffmpeg: string; ffprobe: string }> {
-  // If we are NOT running on Vercel, check if the binaries are available in PATH
-  const isVercel = !!process.env.VERCEL
-  
-  if (!isVercel) {
-    // Return default system commands for local dev (rely on user's local PATH / env vars)
-    return {
-      ytdlp: process.env.YTDLP_PATH || 'yt-dlp',
-      ffmpeg: process.env.FFMPEG_PATH || 'ffmpeg',
-      ffprobe: process.env.FFPROBE_PATH || 'ffprobe'
+  let ytdlp = process.env.YTDLP_PATH || ''
+  if (!ytdlp) {
+    if (isVercel) {
+      if (!fs.existsSync(BUNDLED_YTDLP)) {
+        throw new Error(
+          'bin/yt-dlp_linux is missing from this deployment. It should have been ' +
+          'downloaded by scripts/fetch-ytdlp.js during `npm install` -- check the ' +
+          'Vercel build logs for a "[fetch-ytdlp]" line.'
+        )
+      }
+      ytdlp = BUNDLED_YTDLP
+    } else {
+      ytdlp = 'yt-dlp'
     }
   }
 
-  // On Vercel, we download them to /tmp/zieclipper-bin
-  if (!fs.existsSync(BIN_DIR)) {
-    fs.mkdirSync(BIN_DIR, { recursive: true })
-  }
-
-  const ytdlpPath = path.join(BIN_DIR, 'yt-dlp')
-  const ffmpegPath = path.join(BIN_DIR, 'ffmpeg')
-  const ffprobePath = path.join(BIN_DIR, 'ffprobe')
-
-  // Download yt-dlp if it doesn't exist
-  if (!fs.existsSync(ytdlpPath)) {
-    await downloadFile(YTDLP_URL, ytdlpPath)
-    fs.chmodSync(ytdlpPath, '755')
-  }
-
-  // Download and unzip ffmpeg if it doesn't exist
-  if (!fs.existsSync(ffmpegPath)) {
-    const zipPath = path.join(BIN_DIR, 'ffmpeg.zip')
-    await downloadFile(FFMPEG_URL, zipPath)
-    try {
-      execSync(`unzip -o -d ${BIN_DIR} ${zipPath}`)
-      fs.unlinkSync(zipPath)
-      fs.chmodSync(ffmpegPath, '755')
-    } catch (err: any) {
-      console.error('Failed to unzip ffmpeg:', err)
-      throw new Error(`Failed to unzip ffmpeg: ${err.message}`)
-    }
-  }
-
-  // Download and unzip ffprobe if it doesn't exist
-  if (!fs.existsSync(ffprobePath)) {
-    const zipPath = path.join(BIN_DIR, 'ffprobe.zip')
-    await downloadFile(FFPROBE_URL, zipPath)
-    try {
-      execSync(`unzip -o -d ${BIN_DIR} ${zipPath}`)
-      fs.unlinkSync(zipPath)
-      fs.chmodSync(ffprobePath, '755')
-    } catch (err: any) {
-      console.error('Failed to unzip ffprobe:', err)
-      throw new Error(`Failed to unzip ffprobe: ${err.message}`)
-    }
-  }
-
-  return {
-    ytdlp: ytdlpPath,
-    ffmpeg: ffmpegPath,
-    ffprobe: ffprobePath
-  }
+  return { ytdlp, ffmpeg, ffprobe }
 }
