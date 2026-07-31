@@ -75,3 +75,8 @@ componentseditorpresets/
 componentsui/
 componentsurl-input/
 publicfonts/
+
+# YouTube cookies / secrets — never commit
+*cookies*.txt
+_cookies_b64.txt
+_to_delete/

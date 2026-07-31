@@ -17,12 +17,66 @@ const TMP_DIR = path.join(TMP_ROOT, 'jobs')
 
 // Optional YouTube cookies (Netscape cookies.txt format). YouTube routinely
 // blocks requests from datacenter IPs ("Sign in to confirm you're not a
-// bot"); exporting cookies from a real signed-in browser session and
-// setting YTDLP_COOKIES_PATH to a path readable at runtime works around
-// that. On Vercel this would need to be committed into the repo (e.g.
-// under a project directory) or fetched at request time from Supabase
-// Storage -- there is no mounted-secret-file mechanism like the worker had.
-const COOKIES_FILE = process.env.YTDLP_COOKIES_PATH || path.join(TMP_ROOT, 'yt-cookies.txt')
+// bot"); passing cookies from a real signed-in browser session works around
+// it. Two ways to supply them on Vercel (there's no mounted-secret file):
+//   - YTDLP_COOKIES_B64: the whole cookies.txt base64-encoded, set as a
+//     Vercel env var. Materialized to /tmp at request time (preferred --
+//     keeps the secret out of git).
+//   - YTDLP_COOKIES_PATH: an explicit path to a cookies.txt that exists at
+//     runtime (e.g. committed into the repo -- not recommended for a real
+//     cookie).
+const COOKIES_FILE = path.join(TMP_ROOT, 'yt-cookies.txt')
+
+// Resolves a usable cookies.txt path, materializing it from YTDLP_COOKIES_B64
+// if that's how it was supplied. Re-checks existence every call because /tmp
+// can be wiped between invocations on a cold instance.
+function resolveCookiesFile(): string | null {
+  const explicit = process.env.YTDLP_COOKIES_PATH
+  if (explicit && fs.existsSync(explicit)) return explicit
+
+  const b64 = process.env.YTDLP_COOKIES_B64
+  if (b64) {
+    try {
+      if (!fs.existsSync(COOKIES_FILE)) {
+        fs.mkdirSync(TMP_ROOT, { recursive: true })
+        fs.writeFileSync(COOKIES_FILE, Buffer.from(b64, 'base64').toString('utf-8'))
+      }
+      return COOKIES_FILE
+    } catch {
+      // fall through -- better to try without cookies than to hard-fail here
+    }
+  }
+
+  if (fs.existsSync(COOKIES_FILE)) return COOKIES_FILE
+  return null
+}
+
+// Args every yt-dlp call needs: a JavaScript runtime (YouTube extraction now
+// requires one; Vercel has no Deno but does have Node, which yt-dlp supports
+// as a runtime -- verified: it reports "JS runtimes: node-XX"), plus cookies
+// when available.
+function ytBaseArgs(): string[] {
+  const args = ['--js-runtimes', `node:${process.execPath}`]
+  const cookies = resolveCookiesFile()
+  if (cookies) args.push('--cookies', cookies)
+  return args
+}
+
+// Turns a raw yt-dlp failure into a message that tells whoever's debugging
+// what to actually do -- the "not a bot" block is the single most common
+// failure on datacenter IPs and its fix (cookies) isn't obvious from the
+// raw output alone.
+function ytdlpError(code: number | null, stderr: string): string {
+  const raw = stderr.slice(-1500) || 'no output'
+  const lower = stderr.toLowerCase()
+  if (lower.includes('not a bot') || lower.includes('sign in to confirm')) {
+    const hasCookies = !!resolveCookiesFile()
+    return hasCookies
+      ? `YouTube blocked this request even with cookies (exit ${code}). The cookies may be expired or from a different account/region — re-export a fresh cookies.txt while signed in to YouTube and update YTDLP_COOKIES_B64. Raw: ${raw}`
+      : `YouTube is blocking this server's IP ("Sign in to confirm you're not a bot"). Set YTDLP_COOKIES_B64 in your Vercel env to a base64 cookies.txt exported while signed in to YouTube — see DEPLOY-VERCEL-SUPABASE.md. Raw: ${raw}`
+  }
+  return `yt-dlp failed (exit ${code}): ${raw}`
+}
 
 export interface SubtitleResult {
   title: string
@@ -64,7 +118,7 @@ export async function downloadSubtitlesAndMetadata(
     '--write-auto-subs',
     '--sub-langs', 'all',
     '--sub-format', 'vtt',
-    ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
+    ...ytBaseArgs(),
     '--extractor-retries', '3',
     '--sleep-requests', '1',
     '--no-playlist',
@@ -81,7 +135,7 @@ export async function downloadSubtitlesAndMetadata(
   // quietly returning an empty "Untitled" / 0-duration result, which used
   // to make every downstream failure look unrelated to the real cause.
   if (code !== 0 && !infoFile) {
-    throw new Error(`yt-dlp failed (exit ${code}): ${stderr.slice(-1500) || 'no output'}`)
+    throw new Error(ytdlpError(code, stderr))
   }
 
   let title = 'Untitled'
@@ -135,7 +189,7 @@ export async function fetchInfoJson(url: string, outputDir: string): Promise<str
     url,
     '--skip-download',
     '--write-info-json',
-    ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
+    ...ytBaseArgs(),
     '--extractor-retries', '3',
     '--no-playlist',
     '--output', path.join(outputDir, 'info.%(ext)s'),
@@ -171,7 +225,7 @@ export async function downloadSubtitleTrack(
     '--write-auto-subs',
     '--sub-langs', lang,
     '--sub-format', 'vtt',
-    ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
+    ...ytBaseArgs(),
     '--extractor-retries', '3',
     '--sleep-requests', '1',
     '--no-playlist',
@@ -204,7 +258,7 @@ export async function downloadVideoSection(
     url,
     '--format', 'best[height<=720][ext=mp4]/best',
     '--download-sections', sectionArg,
-    ...(fs.existsSync(COOKIES_FILE) ? ['--cookies', COOKIES_FILE] : []),
+    ...ytBaseArgs(),
     '--extractor-retries', '3',
     '--sleep-requests', '1',
     '--no-playlist',

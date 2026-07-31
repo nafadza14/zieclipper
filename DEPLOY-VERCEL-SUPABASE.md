@@ -40,13 +40,16 @@ Read this before you deploy -- these are real, not hypothetical:
   clip suggestions, rendered video files) is written to Supabase -- either
   the `jobs`/`export_jobs` tables or the `media` Storage bucket -- specifically
   *because* `/tmp` can't be trusted to still be there on the next request.
-- **YouTube may block datacenter IPs.** Vercel's outbound IPs are shared
-  cloud infrastructure, so YouTube's "Sign in to confirm you're not a bot"
-  block can hit more often than it would from a residential IP. Setting
-  `YTDLP_COOKIES_PATH` to a committed cookies.txt file (exported from a
-  real signed-in browser session) works around this but means committing a
-  session cookie into your deployment -- treat that file as a secret with a
-  real expiry, not something to leave in indefinitely.
+- **YouTube blocks datacenter IPs — cookies are effectively required.**
+  Vercel's outbound IPs are shared cloud infrastructure, so YouTube's "Sign
+  in to confirm you're not a bot" block hits almost every request. The fix
+  is to pass cookies from a signed-in YouTube session (see "YouTube cookies"
+  below). Even with cookies, expect the occasional block; cookies from a
+  logged-in account are the best available mitigation on this stack.
+- **yt-dlp needs a JavaScript runtime.** Recent yt-dlp requires a JS runtime
+  for YouTube. Vercel has no Deno, but it does have Node, and the app passes
+  `--js-runtimes node:<node path>` automatically (verified: yt-dlp accepts
+  Node as a runtime). Nothing to configure for this.
 - **Function bundle size.** The bundled `ffmpeg`/`ffprobe` binaries
   (~68 MB + ~79 MB) plus the fetched `yt-dlp_linux` binary (~39 MB) add up to
   roughly 185 MB per Function that imports them. Vercel's per-Function size
@@ -74,10 +77,29 @@ In the Vercel project's **Settings → Environment Variables**, set (see
 - At least one LLM provider key: `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`,
   `SUMOPOD_API_KEY`, and/or `GEMINI_API_KEY`, matching whichever
   model/provider your app is configured to call.
-- Optionally `YTDLP_COOKIES_PATH` — see the trade-offs section above.
+- `YTDLP_COOKIES_B64` — effectively required (see "YouTube cookies" below).
 
 Remove any leftover `WORKER_URL` / `WORKER_SECRET` / `PYTHON_SERVICE_URL`
 variables from a previous deploy attempt -- they're not used anymore.
+
+### YouTube cookies (do this or YouTube will refuse)
+
+1. Sign in to YouTube in a browser.
+2. Export cookies to a `cookies.txt` in Netscape format. Easiest is a
+   browser extension such as "Get cookies.txt LOCALLY" — open youtube.com,
+   click the extension, Export. (yt-dlp's wiki page
+   `FAQ#how-do-i-pass-cookies-to-yt-dlp` lists options.)
+3. Base64-encode the file into one line:
+   - macOS: `base64 cookies.txt | tr -d '\n'`
+   - Linux: `base64 -w0 cookies.txt`
+   - Windows PowerShell:
+     `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt"))`
+4. In Vercel → Settings → Environment Variables, set `YTDLP_COOKIES_B64` to
+   that string. Redeploy (or it applies on the next deploy).
+
+Cookies expire — if jobs start failing again with the "not a bot" message,
+re-export and update the var. Use an account you don't mind exposing to a
+cloud IP; treat the value as a secret.
 
 ## 3. Push and verify
 
