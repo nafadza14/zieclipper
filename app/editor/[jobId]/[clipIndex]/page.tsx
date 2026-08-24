@@ -1,21 +1,23 @@
 'use client'
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEditorStore } from '@/store/editorStore'
-import { VideoPlayer } from '@/components/editor/VideoPlayer'
+import { VideoPlayer, type VideoPlayerHandle } from '@/components/editor/VideoPlayer'
 import { SubtitleStylePanel } from '@/components/editor/panels/SubtitleStylePanel'
 import { FontPanel } from '@/components/editor/panels/FontPanel'
 import { EmojiPanel } from '@/components/editor/panels/EmojiPanel'
 import { CropPanel } from '@/components/editor/panels/CropPanel'
 import { ExportPanel } from '@/components/editor/panels/ExportPanel'
+import { AspectSwitcher } from '@/components/editor/AspectSwitcher'
+import { Timeline } from '@/components/editor/Timeline'
 import type { Job } from '@/store/types'
 import { useAuth } from '@/hooks/useAuth'
 
 const TABS = [
-  { id: 'subtitles', label: 'Subtitles', icon: '⏱' },
+  { id: 'subtitles', label: 'Captions',  icon: '⏱' },
   { id: 'font',      label: 'Font',      icon: 'Aa' },
   { id: 'emoji',     label: 'Emoji',     icon: '✦' },
-  { id: 'crop',      label: 'Positioning', icon: '⊡' },
+  { id: 'crop',      label: 'Reframe',   icon: '⊡' },
   { id: 'export',    label: 'Export',    icon: '↓' },
 ]
 
@@ -28,8 +30,14 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
   const [activeTab, setActiveTab] = useState('subtitles')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Full job kept so the header can offer prev/next between all AI-picked
+  // clips without re-fetching each hop. Just an id list + score index.
+  const [allClips, setAllClips] = useState<{ index: number; score: number; title: string }[]>([])
 
-  const { setJob, clip, subtitleChunks, settings, updateSubtitleChunkText } = useEditorStore()
+  const { setJob, clip, subtitleChunks, settings, updateSubtitleChunkText, trackingKeyframes } = useEditorStore()
+
+  const playerRef = useRef<VideoPlayerHandle>(null)
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -48,11 +56,26 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
             (w) => w.end >= c.start_time - 15 && w.start <= c.end_time + 15
           )
           setJob(jobId, clipIndex, c, clipTranscript)
+          setAllClips(job.clips.map((cc, i) => ({ index: i, score: cc.score, title: cc.title })))
           setLoading(false)
         })
         .catch((e) => { setError(e.message); setLoading(false) })
     }
   }, [jobId, clipIndex, setJob, user, authLoading, router])
+
+  // Grab the underlying <video> element from the player once mounted so the
+  // Timeline can drive its playhead. Runs after loading finishes so the video
+  // node actually exists in the DOM.
+  useEffect(() => {
+    if (loading) return
+    // The VideoPlayer renders exactly one <video> that isn't the blurred bg
+    // (bg is muted/loop/no controls). Match by controls attribute.
+    const t = setTimeout(() => {
+      const v = document.querySelector<HTMLVideoElement>('main video[controls]')
+      setVideoEl(v)
+    }, 100)
+    return () => clearTimeout(t)
+  }, [loading, clipIndex])
 
   if (loading || authLoading) {
     return (
@@ -62,9 +85,7 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
     )
   }
 
-  if (!user) {
-    return null
-  }
+  if (!user) return null
 
   if (error || !clip) {
     return (
@@ -75,6 +96,10 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
       </div>
     )
   }
+
+  const currentIdxInAll = allClips.findIndex((c) => c.index === clipIndex)
+  const prevClip = currentIdxInAll > 0 ? allClips[currentIdxInAll - 1] : null
+  const nextClip = currentIdxInAll >= 0 && currentIdxInAll < allClips.length - 1 ? allClips[currentIdxInAll + 1] : null
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[#07070b]">
@@ -87,6 +112,31 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
         >
           <span className="text-xs">←</span> Clips
         </button>
+        <div className="h-3.5 w-px bg-white/[0.08]" />
+
+        {/* Prev / Position / Next — OpusClip-style clip pager */}
+        <div className="flex items-center gap-1.5">
+          <button
+            disabled={!prevClip}
+            onClick={() => prevClip && router.push(`/editor/${jobId}/${prevClip.index}`)}
+            title={prevClip ? `Prev: ${prevClip.title}` : 'First clip'}
+            className="w-7 h-7 rounded-md border border-white/[0.08] text-neutral-400 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs"
+          >
+            ←
+          </button>
+          <span className="text-[11px] text-neutral-500 font-mono px-1">
+            {currentIdxInAll + 1} / {allClips.length}
+          </span>
+          <button
+            disabled={!nextClip}
+            onClick={() => nextClip && router.push(`/editor/${jobId}/${nextClip.index}`)}
+            title={nextClip ? `Next: ${nextClip.title}` : 'Last clip'}
+            className="w-7 h-7 rounded-md border border-white/[0.08] text-neutral-400 hover:text-white hover:bg-white/[0.06] transition disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs"
+          >
+            →
+          </button>
+        </div>
+
         <div className="h-3.5 w-px bg-white/[0.08]" />
         <h1 className="text-sm font-medium text-white truncate flex-1">{clip.title}</h1>
         <div className="flex items-center gap-2 shrink-0">
@@ -140,19 +190,33 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
           </div>
         </aside>
 
-        {/* Center: video */}
-        <main className="flex-1 bg-[#07070b] flex items-center justify-center p-6 overflow-hidden">
-          {/* Subtle ambient glow behind the phone */}
-          <div className="relative">
+        {/* Center: preview + timeline stacked */}
+        <main className="flex-1 bg-[#07070b] flex flex-col items-stretch justify-start p-6 overflow-auto">
+          {/* Aspect ratio quick switch (above preview, OpusClip pattern) */}
+          <AspectSwitcher />
+
+          {/* Preview */}
+          <div className="relative mx-auto">
             <div className="absolute inset-0 -m-12 bg-white/5 rounded-full blur-3xl pointer-events-none" />
             <VideoPlayer
+              ref={playerRef}
               jobId={jobId}
               clipStart={clip.start_time + (settings.crop.startOffset || 0)}
               clipEnd={clip.end_time + (settings.crop.endOffset || 0)}
               chunks={subtitleChunks}
               settings={settings}
+              trackingKeyframes={trackingKeyframes}
             />
           </div>
+
+          {/* Timeline strip — click any chunk to seek video there */}
+          <Timeline
+            chunks={subtitleChunks}
+            clipStart={clip.start_time + (settings.crop.startOffset || 0)}
+            clipEnd={clip.end_time + (settings.crop.endOffset || 0)}
+            videoEl={videoEl}
+            onSeek={(t) => playerRef.current?.seekToClipTime(t)}
+          />
         </main>
 
         {/* Right panel: subtitle chunks */}
@@ -179,9 +243,16 @@ export default function EditorPage({ params }: { params: Promise<{ jobId: string
                   placeholder="Ketik subtitle di sini..."
                 />
                 <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-white/[0.03]">
-                  <span className="text-[9px] text-[#413d52] font-mono tracking-wider uppercase font-semibold">
-                    Chunk #{chunk.id}
-                  </span>
+                  <button
+                    onClick={() => {
+                      const clipLocalStart = Math.max(0, chunk.chunkStart - clip.start_time - (settings.crop.startOffset || 0))
+                      playerRef.current?.seekToClipTime(clipLocalStart)
+                    }}
+                    title="Jump to this chunk in the preview"
+                    className="text-[9px] text-[#413d52] hover:text-white font-mono tracking-wider uppercase font-semibold transition"
+                  >
+                    ▶ #{chunk.id}
+                  </button>
                   <span className="text-[9px] text-[#413d52] font-mono">
                     {chunk.chunkStart.toFixed(1)}s – {chunk.chunkEnd.toFixed(1)}s
                   </span>

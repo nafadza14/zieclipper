@@ -34,6 +34,22 @@ yarn-error.log*
 .env*
 !.env.example
 
+# YouTube cookies — MUST never be committed. These are session cookies
+# from a signed-in YouTube account; committing them = anyone with repo
+# access can hijack that account.
+*cookies*.txt
+_cookies_b64.txt
+www.youtube.com_cookies.txt
+
+# Dev-only sandbox. Anything you want to keep on your laptop but NOT push
+# to GitHub — cookies, personal notes, test scripts, scratch files,
+# .env backups, downloaded test videos — goes in /dev-only/.
+# The folder itself IS tracked (via .gitkeep) so the path always exists
+# on both machines; the contents never leave your laptop.
+/dev-only/*
+!/dev-only/.gitkeep
+!/dev-only/README.md
+
 # vercel
 .vercel
 

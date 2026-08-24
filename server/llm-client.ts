@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
+import { parseLooseJson } from './json-repair'
 
 export interface ToolDefinition {
   name: string
@@ -10,6 +11,11 @@ export interface ToolDefinition {
 // Ported from the old api/services/llm_client.py -- same forced-tool-use
 // pattern, same provider list, running in-process instead of over HTTP to
 // a separate FastAPI service (there's no longer a separate service to call).
+//
+// maxTokens default bumped from 4096 to 8192 because the analyzer routinely
+// emits 4-8 clips × {title, hook, reasons[], ...} which was hitting the old
+// cap and truncating the JSON mid-object -- the classic "Expected ':' after
+// property name" JSON.parse error.
 export async function callTool(
   provider: string,
   model: string,
@@ -17,7 +23,7 @@ export async function callTool(
   userMsg: string,
   toolDef: ToolDefinition,
   toolName: string,
-  maxTokens = 4096,
+  maxTokens = 8192,
 ): Promise<any> {
   if (provider === 'anthropic') {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -44,7 +50,7 @@ export async function callTool(
     // with -- left unchanged deliberately (rotating it is a separate,
     // already-flagged task, not part of this architecture change).
     client = new OpenAI({
-      apiKey: process.env.SUMOPOD_API_KEY || 'sk-LH238LuYeE77a-8IVxxQdg',
+      apiKey: process.env.SUMOPOD_API_KEY || '',
       baseURL: 'https://ai.sumopod.com/v1',
     })
   } else {
@@ -63,28 +69,41 @@ export async function callTool(
     },
   }
 
-  const resp = await client.chat.completions.create({
-    model,
-    max_tokens: maxTokens,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: userMsg },
-    ],
-    tools: [oaiTool],
-    tool_choice: { type: 'function', function: { name: toolName } },
-  })
+  // One call + one retry with a sterner system prompt if the JSON is
+  // unparseable even after loose-parsing. Handles the rare case where the
+  // model just produced garbage -- most of the time the first attempt
+  // succeeds or loose-parses fine.
+  async function attempt(extraSys?: string) {
+    const resp = await client.chat.completions.create({
+      model,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: extraSys ? `${system}\n\n${extraSys}` : system },
+        { role: 'user', content: userMsg },
+      ],
+      tools: [oaiTool],
+      tool_choice: { type: 'function', function: { name: toolName } },
+    })
 
-  const toolCalls = resp.choices[0]?.message?.tool_calls
-  if (!toolCalls || !toolCalls.length) {
-    const content = resp.choices[0]?.message?.content
-    if (content) {
-      const m = content.match(/(\{[\s\S]*\})/)
-      if (m) {
-        try { return JSON.parse(m[1]) } catch {}
+    const toolCalls = resp.choices[0]?.message?.tool_calls
+    if (!toolCalls || !toolCalls.length) {
+      const content = resp.choices[0]?.message?.content
+      if (content) {
+        try { return parseLooseJson(content) } catch {}
       }
+      throw new Error(`Model failed to invoke tool. Response content: ${content}`)
     }
-    throw new Error(`Model failed to invoke tool. Response content: ${content}`)
+    return parseLooseJson(toolCalls[0].function.arguments)
   }
 
-  return JSON.parse(toolCalls[0].function.arguments)
+  try {
+    return await attempt()
+  } catch (err: any) {
+    // One retry with a stricter reminder. Only useful for truly broken
+    // outputs; the loose parser already handles trailing commas, quote
+    // variants, and mid-object truncation on its own.
+    return await attempt(
+      'CRITICAL: Your tool arguments MUST be complete, valid JSON. Do not truncate. Do not add trailing commas. Escape all newlines inside strings as \\n. If your response would exceed the budget, use fewer items rather than an incomplete list.',
+    )
+  }
 }

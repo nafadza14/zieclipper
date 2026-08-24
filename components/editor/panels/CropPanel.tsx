@@ -143,11 +143,17 @@ export function CropPanel({ jobId }: { jobId: string }) {
                 max={Math.round((1 - CROP_WIDTH_RATIO) * 1000)}
                 value={Math.round(crop.x * 1000)}
                 onChange={(e) => updateCrop({ x: parseInt(e.target.value) / 1000 })}
-                className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer"
+                disabled={!!crop.autoTrack}
+                className="w-full accent-white bg-neutral-800 h-1.5 rounded-lg appearance-none cursor-pointer disabled:opacity-40"
               />
-              <div className="text-xs text-neutral-500 mt-1.5 text-center">{Math.round(crop.x * 100)}% from left</div>
+              <div className="text-xs text-neutral-500 mt-1.5 text-center">
+                {crop.autoTrack ? 'overridden by auto-track' : `${Math.round(crop.x * 100)}% from left`}
+              </div>
             </div>
           )}
+
+          {/* Auto face tracking */}
+          {canPan && <FaceTrackingCard jobId={jobId} />}
         </>
       ) : (
         <>
@@ -248,6 +254,93 @@ export function CropPanel({ jobId }: { jobId: string }) {
           💡 Gunakan slider di atas jika Anda ingin memperluas atau memotong bagian awal/akhir video. Perubahan timing akan langsung disinkronkan ke pratinjau dan ekspor video secara otomatis.
         </div>
       </div>
+    </div>
+  )
+}
+
+// Auto face-tracking card: toggle + "Preview tracking" button that calls
+// /api/track/... to compute keyframes, cached in the editor store so the
+// live preview (VideoPlayer) can animate the crop follow-along in real
+// time. Kept in this file since it only ever renders inside CropPanel.
+function FaceTrackingCard({ jobId }: { jobId: string }) {
+  const {
+    settings, updateCrop, clipIndex, trackingKeyframes, trackingLoading,
+    setTrackingKeyframes, setTrackingLoading,
+  } = useEditorStore()
+  const { crop } = settings
+  const [error, setError] = useState<string | null>(null)
+
+  async function runTracking() {
+    if (clipIndex === null) return
+    setError(null); setTrackingLoading(true); setTrackingKeyframes(null)
+    try {
+      const res = await fetch(`/api/track/${jobId}/${clipIndex}`, { method: 'POST' })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'tracking failed')
+      if (!d.keyframes?.length) {
+        setError(d.warning || 'Wajah tidak terdeteksi. Crop akan tetap di tengah.')
+        setTrackingKeyframes([])
+        return
+      }
+      setTrackingKeyframes(d.keyframes)
+    } catch (e: any) {
+      setError(e.message)
+      setTrackingLoading(false)
+    }
+  }
+
+  return (
+    <div className="border border-neutral-800 bg-[#0f0f0f] rounded-xl p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm text-white font-medium">Auto face tracking</div>
+          <div className="text-[10px] text-neutral-500 mt-0.5">Crop mengikuti pembicara (preview + export).</div>
+        </div>
+        <button
+          onClick={() => updateCrop({ autoTrack: !crop.autoTrack })}
+          className={`relative w-10 h-5 rounded-full transition ${crop.autoTrack ? 'bg-white' : 'bg-[#333]'}`}
+        >
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${crop.autoTrack ? 'left-5 bg-black' : 'left-0.5 bg-white'}`} />
+        </button>
+      </div>
+
+      {crop.autoTrack && (
+        <>
+          {/* Preview tracking button + status */}
+          <div>
+            <button
+              onClick={runTracking}
+              disabled={trackingLoading}
+              className="w-full py-2 rounded-lg bg-white text-black text-xs font-semibold hover:bg-neutral-200 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+            >
+              {trackingLoading ? (
+                <>
+                  <span className="w-3 h-3 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                  Menghitung tracking…
+                </>
+              ) : trackingKeyframes && trackingKeyframes.length > 0 ? (
+                <>✓ Preview aktif · klik untuk hitung ulang</>
+              ) : (
+                <>▶ Preview tracking di player</>
+              )}
+            </button>
+            {trackingKeyframes && trackingKeyframes.length > 0 && (
+              <div className="text-[10px] text-neutral-500 mt-1.5 text-center">
+                {trackingKeyframes.length} keyframe terdeteksi
+              </div>
+            )}
+            {error && (
+              <div className="mt-2 text-[10px] text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded p-2">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div className="text-[10px] text-neutral-500 leading-relaxed border-t border-neutral-900 pt-2">
+            Preview cache tersimpan sementara. Face tracking pada export = 1 kredit tambahan.
+          </div>
+        </>
+      )}
     </div>
   )
 }

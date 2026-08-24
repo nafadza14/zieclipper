@@ -2,7 +2,8 @@
 import { create } from 'zustand'
 import type {
   WordTiming, SubtitleChunk, ClipSuggestion, EditorSettings,
-  SubtitleStyle, FontSettings, EmojiSettings, CropSettings, TrimSettings, VideoFormat
+  SubtitleStyle, FontSettings, EmojiSettings, CropSettings, TrimSettings, VideoFormat,
+  FaceKeyframe,
 } from './types'
 import { SUBTITLE_PRESETS, DEFAULT_SETTINGS } from '@/components/editor/presets/SubtitlePresets'
 import { parseChunks } from '@/lib/subtitle-parser'
@@ -14,6 +15,12 @@ interface EditorState {
   transcript: WordTiming[]
   subtitleChunks: SubtitleChunk[]
   settings: EditorSettings
+  // Cached face-tracking keyframes (from /api/track/...). Populated when
+  // the user clicks "Preview tracking" in CropPanel. In-memory only — a
+  // page refresh clears it and re-tracking costs vision LLM calls, so
+  // don't lose them lightly. Cleared automatically on setJob (new clip).
+  trackingKeyframes: FaceKeyframe[] | null
+  trackingLoading: boolean
 
   setJob: (jobId: string, clipIndex: number, clip: ClipSuggestion, transcript: WordTiming[]) => void
   applyPreset: (presetName: string) => void
@@ -27,6 +34,8 @@ interface EditorState {
   setSubtitleOffset: (ms: number) => void
   setEmojiOverride: (chunkIdx: number, emoji: string) => void
   recomputeChunks: () => void
+  setTrackingKeyframes: (kfs: FaceKeyframe[] | null) => void
+  setTrackingLoading: (loading: boolean) => void
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -36,11 +45,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   transcript: [],
   subtitleChunks: [],
   settings: DEFAULT_SETTINGS,
+  trackingKeyframes: null,
+  trackingLoading: false,
 
   setJob: (jobId, clipIndex, clip, transcript) => {
     const settings = { ...DEFAULT_SETTINGS, trim: { start: 0, end: clip.end_time - clip.start_time } }
     const subtitleChunks = parseChunks(transcript, settings.subtitleStyle)
-    set({ jobId, clipIndex, clip, transcript, settings, subtitleChunks })
+    // Clear tracking cache when switching to a different clip -- keyframes
+    // belong to a specific (jobId, clipIndex) pair.
+    set({ jobId, clipIndex, clip, transcript, settings, subtitleChunks, trackingKeyframes: null, trackingLoading: false })
   },
 
   applyPreset: (presetName) => {
@@ -147,4 +160,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const { transcript, settings } = get()
     set({ subtitleChunks: parseChunks(transcript, settings.subtitleStyle) })
   },
+
+  setTrackingKeyframes: (kfs) => set({ trackingKeyframes: kfs, trackingLoading: false }),
+  setTrackingLoading: (loading) => set({ trackingLoading: loading }),
 }))

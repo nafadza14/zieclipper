@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ jobI
 
   const { data: job } = await auth.supabase
     .from('jobs')
-    .select('id, url')
+    .select('id, url, source_storage_path')
     .eq('id', jobId)
     .eq('user_id', auth.user.id)
     .maybeSingle()
@@ -36,11 +36,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ jobI
   const storagePath = mediaPath(auth.user.id, jobId, `segment_${Math.round(start * 10)}_${Math.round(end * 10)}.mp4`)
 
   try {
-    if (!(await fileExistsInStorage(auth.supabase, storagePath))) {
-      const filePath = await ensureVideoSegment(jobId, job.url, start, end)
-      await uploadFile(auth.supabase, storagePath, filePath, 'video/mp4')
+    if (!(await fileExistsInStorage(storagePath))) {
+      const filePath = await ensureVideoSegment(jobId, job.url, start, end, job.source_storage_path ?? undefined)
+      await uploadFile(storagePath, filePath, 'video/mp4')
     }
-    const signedUrl = await createSignedUrl(auth.supabase, storagePath, 600)
+    const signedUrl = await createSignedUrl(storagePath, 600)
     return NextResponse.redirect(signedUrl, 307)
   } catch (err: any) {
     return NextResponse.json({ error: `Failed to fetch segment: ${err.message}` }, { status: 500 })

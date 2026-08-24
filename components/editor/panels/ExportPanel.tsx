@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { useEditorStore } from '@/store/editorStore'
 import { useExportJob } from '@/hooks/useExportJob'
 
@@ -141,6 +142,9 @@ export function ExportPanel() {
         </a>
       )}
 
+      {/* Publish to YouTube (requires connected account in Settings) */}
+      {isDone && exportId && <PublishToYouTube exportId={exportId} title={metadata?.title} description={metadata?.description} tags={metadata?.tags} />}
+
       {!isDone && (
         <button
           onClick={startExport}
@@ -243,7 +247,7 @@ export function ExportPanel() {
                       ))}
                     </div>
                     <p className={`text-[10px] ${overLimit ? 'text-red-400' : 'text-gray-600'}`}>
-                      {tagChars}/500 chars{overLimit ? ' — over limit' : ''}
+                      {tagChars}/500 chars{overLimit ? ' · melebihi batas' : ''}
                     </p>
                   </div>
                 )
@@ -277,6 +281,79 @@ export function ExportPanel() {
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Publish an already-rendered export to the user's connected YouTube
+// channel via /api/social/youtube/upload. Handles the not-connected case
+// by pointing the user to Settings.
+function PublishToYouTube({ exportId, title, description, tags }: { exportId: string; title?: string; description?: string; tags?: string[] }) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ url: string; privacyStatus: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [privacyStatus, setPrivacyStatus] = useState<'private' | 'unlisted' | 'public'>('private')
+
+  async function publish() {
+    setBusy(true); setError(null); setResult(null)
+    try {
+      const res = await fetch('/api/social/youtube/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exportId, title, description, tags, privacyStatus }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'upload gagal')
+      setResult({ url: d.url, privacyStatus: d.privacyStatus })
+    } catch (e: any) {
+      setError(e.message)
+    } finally { setBusy(false) }
+  }
+
+  if (result) {
+    return (
+      <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="text-red-400 text-lg">▶</span>
+          <div className="flex-1">
+            <div className="text-white text-sm font-semibold">Terunggah ke YouTube</div>
+            <div className="text-[10px] text-neutral-500">Status: {result.privacyStatus}. Bisa diubah di YouTube Studio.</div>
+          </div>
+        </div>
+        <a href={result.url} target="_blank" rel="noreferrer" className="block text-center text-xs bg-white text-black font-semibold rounded-lg py-2 hover:bg-neutral-200 transition">
+          Buka di YouTube ↗
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        {(['private','unlisted','public'] as const).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPrivacyStatus(p)}
+            className={`flex-1 py-1 rounded-md text-[10px] font-semibold border transition ${
+              privacyStatus === p ? 'border-white bg-white/10 text-white' : 'border-[#2a2a2a] text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={publish}
+        disabled={busy}
+        className="w-full py-2.5 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-semibold transition flex items-center justify-center gap-2"
+      >
+        {busy ? (<><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Uploading…</>) : (<>▶ Publish to YouTube</>)}
+      </button>
+      {error && (
+        <div className="text-[10px] text-red-400 bg-red-500/10 rounded p-2">
+          {error} {error.includes('No YouTube') && (<Link href="/settings#accounts" className="underline text-white ml-1">Connect →</Link>)}
         </div>
       )}
     </div>

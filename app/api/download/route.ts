@@ -7,6 +7,8 @@ import { downloadSubtitlesAndMetadata } from '@/server/ytdlp-service'
 import { buildAvailableSubtitles } from '@/server/subtitles'
 import { parseVttWords } from '@/server/transcript-parser'
 import { analyzeTranscript } from '@/server/analyzer'
+import { downloadAudioOnly, extractAudioForWhisper, transcribeAudio } from '@/server/whisper-client'
+import { creditsForGenerate, spendCredits, addCredits } from '@/server/credits'
 
 // Hobby plan caps a Function at 300s; Pro/Enterprise can raise this up to
 // 800s (or 1800s on the "extended maximum" beta) via vercel.json / project
@@ -39,8 +41,12 @@ export async function POST(req: NextRequest) {
   const videoId = extractVideoId(url)
   if (!videoId) return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 })
 
-  const chosenModel = model || 'claude-sonnet-4-6'
-  const chosenProvider = provider || 'anthropic'
+  // Default to gpt-4o-mini via Sumopod — matches Klipaja's cost model.
+  // ~60x cheaper than Claude Sonnet with negligible quality drop for the
+  // "find 3 viral clips from transcript" task. Users can override via
+  // request body (Pro tier UI exposes a "smarter model" toggle).
+  const chosenModel = model || 'gpt-4o-mini'
+  const chosenProvider = provider || 'sumopod'
 
   const { error: insertErr } = await auth.supabase.from('jobs').insert({
     id: jobId,
@@ -60,6 +66,15 @@ export async function POST(req: NextRequest) {
     await auth.supabase.from('jobs').update({ status: 'transcribing' }).eq('id', jobId)
 
     const { title, duration, vttFiles, infoJsonPath } = await downloadSubtitlesAndMetadata(url, outputDir)
+    // Charge credits now that we know the real duration -- refunded below if
+    // the rest of the pipeline fails.
+    const creditCost = creditsForGenerate(duration || 60)
+    try {
+      await spendCredits(auth.supabase, creditCost, 'generate', title || url.slice(0, 60), jobId)
+    } catch {
+      await auth.supabase.from('jobs').update({ status: 'error', error: 'Kredit tidak cukup. Silakan top-up.' }).eq('id', jobId).then(() => {}, () => {})
+      return NextResponse.json({ error: 'insufficient_credits', needed: creditCost }, { status: 402 })
+    }
     await auth.supabase.from('jobs').update({ title, duration }).eq('id', jobId)
 
     const availableSubtitles = buildAvailableSubtitles(vttFiles, infoJsonPath)
@@ -79,16 +94,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!defaultVtt) {
-      throw new Error('No subtitles or captions (manual or auto-generated) are available for this video, so no transcript can be built.')
-    }
-
     let targetLang = 'English'
     if (defaultLang && (defaultLang.toLowerCase().startsWith('id') || defaultLang.toLowerCase().startsWith('ms'))) {
       targetLang = 'Indonesian'
     }
 
-    const transcript = parseVttWords(defaultVtt)
+    // Two paths to a transcript:
+    //   1. Preferred: parse the VTT file yt-dlp already downloaded.
+    //   2. Fallback: YouTube has no captions AT ALL for this video --
+    //      download audio-only + run through Whisper (Groq preferred, free
+    //      tier; OpenAI as backup). This is the only path that works for
+    //      videos where the uploader disabled captions or the language
+    //      isn't auto-caption-supported.
+    let transcript
+    if (defaultVtt) {
+      transcript = parseVttWords(defaultVtt)
+    } else {
+      // Whisper fallback. Give the client immediate visibility via the
+      // status field so the progress bar makes sense (this step can add
+      // 10-60s on Groq for typical videos).
+      await auth.supabase.from('jobs').update({ status: 'transcribing' }).eq('id', jobId)
+      const audioPath = await downloadAudioOnly(url, outputDir, [])
+      const mp3Path = path.join(outputDir, 'audio.mp3')
+      await extractAudioForWhisper(audioPath, mp3Path)
+      const whisper = await transcribeAudio(mp3Path)
+      transcript = whisper.words
+      if (!transcript.length) {
+        throw new Error('No transcript could be built for this video: no captions and Whisper returned no words.')
+      }
+      // Reflect the detected language so retranscript etc. still work.
+      defaultLang = whisper.language || defaultLang || 'en'
+      if (defaultLang.startsWith('id') || defaultLang.startsWith('ms')) targetLang = 'Indonesian'
+    }
+
     await auth.supabase.from('jobs').update({
       transcript,
       status: 'analyzing',
@@ -101,6 +139,7 @@ export async function POST(req: NextRequest) {
       chosenProvider,
       language || targetLang,
       target_duration || 'auto',
+      duration || undefined,   // scale clip count to source video length
     )
 
     await auth.supabase.from('jobs').update({ clips, status: 'ready' }).eq('id', jobId)
@@ -108,6 +147,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ jobId, status: 'ready' })
   } catch (err: any) {
     await auth.supabase.from('jobs').update({ status: 'error', error: err.message }).eq('id', jobId).then(() => {}, () => {})
+    try {
+      const { data: jobRow } = await auth.supabase.from('jobs').select('duration').eq('id', jobId).maybeSingle()
+      if (jobRow?.duration) {
+        const refundAmt = creditsForGenerate(jobRow.duration)
+        await addCredits(auth.supabase, refundAmt, 'refund', `Refund gagal proses: ${err.message?.slice(0, 100)}`)
+      }
+    } catch {}
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

@@ -5,9 +5,16 @@ import os from 'os'
 import { requireUser } from '@/lib/supabase-server'
 import { ensureVideoSegment } from '@/server/ytdlp-service'
 import { runFFmpeg } from '@/server/ffmpeg-processor'
-import { buildExportArgs } from '@/lib/ffmpeg-commands'
+import { buildExportArgs, type EmojiOverlay } from '@/lib/ffmpeg-commands'
 import { generateAssFile } from '@/lib/ass-generator'
 import { uploadFile, createSignedUrl, mediaPath } from '@/server/storage'
+import { emojiForChunk } from '@/lib/emoji-map'
+import { ensureEmojiPng } from '@/server/emoji-assets'
+import { trackFace } from '@/server/face-tracking'
+import { buildDynamicCropXExpression } from '@/lib/crop-expression'
+import { getFormatDimensions } from '@/lib/formats'
+import { probeVideoDimensions } from '@/server/ffmpeg-processor'
+import { CREDIT_COST, spendCredits } from '@/server/credits'
 import type { EditorSettings, SubtitleChunk, ExportJob } from '@/store/types'
 
 export const maxDuration = 300
@@ -66,7 +73,7 @@ export async function POST(req: NextRequest) {
   const outputPath = path.join(exportDir, `${exportId}.mp4`)
 
   try {
-    const segmentPath = await ensureVideoSegment(jobId, job.url, actualStart, actualEnd)
+    const segmentPath = await ensureVideoSegment(jobId, job.url, actualStart, actualEnd, job.source_storage_path ?? undefined)
 
     const offsetSec = (settings.subtitleOffsetMs ?? 0) / 1000
     const clipDur = actualEnd - actualStart
@@ -86,8 +93,62 @@ export async function POST(req: NextRequest) {
     const assContent = generateAssFile(adjustedChunks, settings, clipDur)
     fs.writeFileSync(assPath, assContent, 'utf-8')
 
+    // Resolve emoji overlays for the render. Each chunk that has a resolved
+    // emoji (per-chunk override or auto-generated from keywords) gets a
+    // time-gated PNG overlay in the final ffmpeg graph. Downloads are
+    // parallel + cached in /tmp -- failures fall through silently so a
+    // temporary CDN glitch doesn't kill the whole export, we just skip that
+    // one emoji.
+    let emojiOverlays: EmojiOverlay[] = []
+    if (settings.emoji.enabled) {
+      const requests = adjustedChunks.map(async (c) => {
+        const em = emojiForChunk(c, settings.emoji)
+        if (!em) return null
+        const pngPath = await ensureEmojiPng(em)
+        if (!pngPath) return null
+        const ov: EmojiOverlay = {
+          pngPath,
+          start: c.chunkStart,
+          end: c.chunkEnd,
+          size: settings.emoji.size,
+          position: settings.emoji.position,
+          subtitlePosition: settings.subtitleStyle.position,
+          subtitleOffsetY: settings.subtitleStyle.positionOffsetY,
+        }
+        return ov
+      })
+      emojiOverlays = (await Promise.all(requests)).filter((x): x is EmojiOverlay => !!x)
+    }
+
+    // Auto face-tracking (opt-in): sample frames from the trimmed segment,
+    // ask the vision LLM where the speaker's face is, build a dynamic crop
+    // expression. Only meaningful in fill mode with an aspect ratio narrower
+    // than the source (9:16 or 1:1) -- 16:9 keeps full width so there's
+    // nothing to pan. Any failure falls through to the static crop.
+    let cropXExpr: string | undefined
+    const shouldTrack = settings.crop.autoTrack && settings.crop.style === 'fill' && settings.videoFormat !== '16:9'
+    if (shouldTrack) {
+      // Charge the face-tracking add-on kredit BEFORE the vision LLM
+      // calls. If the user is broke, we quietly skip tracking and fall
+      // through to the static crop (better UX than failing the export).
+      let paid = false
+      try {
+        await spendCredits(auth.supabase, CREDIT_COST.faceTrackingPerExport, 'face_track', `Face tracking export ${exportId}`, jobId)
+        paid = true
+      } catch {}
+      if (paid) {
+        try {
+          const { width: TW, height: TH } = getFormatDimensions(settings.videoFormat)
+          const { width: sourceW, height: sourceH } = await probeVideoDimensions(segmentPath)
+          const cropW = Math.round((sourceH * TW) / TH / 2) * 2
+          const kfs = await trackFace(segmentPath, 0, clipDur, job.provider || 'sumopod', job.model || 'gpt-4o-mini')
+          if (kfs.length) cropXExpr = buildDynamicCropXExpression(kfs, sourceW, cropW)
+        } catch {}
+      }
+    }
+
     await runFFmpeg(
-      buildExportArgs({ sourcePath: segmentPath, assPath, outputPath, settings, clipStart: 0, clipEnd: clipDur }),
+      buildExportArgs({ sourcePath: segmentPath, assPath, outputPath, settings, clipStart: 0, clipEnd: clipDur, emojiOverlays, cropXExpr }),
       (progress) => {
         auth.supabase.from('export_jobs').update({ progress }).eq('id', exportId).then(() => {}, () => {})
       },
@@ -95,7 +156,7 @@ export async function POST(req: NextRequest) {
     )
 
     const storagePath = mediaPath(auth.user.id, jobId, 'exports', `${exportId}.mp4`)
-    await uploadFile(auth.supabase, storagePath, outputPath, 'video/mp4')
+    await uploadFile(storagePath, outputPath, 'video/mp4')
 
     await auth.supabase.from('export_jobs').update({
       status: 'done',
@@ -129,7 +190,7 @@ export async function GET(req: NextRequest) {
 
   const download = new URL(req.url).searchParams.get('download')
   if (download === '1' && data.status === 'done' && data.storage_path) {
-    const signedUrl = await createSignedUrl(auth.supabase, data.storage_path, 300)
+    const signedUrl = await createSignedUrl(data.storage_path, 300)
     return NextResponse.redirect(signedUrl, 307)
   }
 

@@ -54,11 +54,55 @@ function resolveCookiesFile(): string | null {
 // Args every yt-dlp call needs: a JavaScript runtime (YouTube extraction now
 // requires one; Vercel has no Deno but does have Node, which yt-dlp supports
 // as a runtime -- verified: it reports "JS runtimes: node-XX"), plus cookies
-// when available.
+// when available, plus alternate YouTube player clients. The player_client
+// list tells the youtube extractor which API paths to try in priority order;
+// "web_safari" and "mweb" often bypass the SABR-only streaming experiment
+// that "android" and "ios" run into (see WARNING in yt-dlp output).
+//
+// LOCAL DEV: When running locally (not on a datacenter IP), we prefer to use
+// cookies extracted straight from the user's installed browser via
+// --cookies-from-browser. This is far more reliable than a cookies.txt file
+// because it always has fresh session tokens from a real signed-in browser.
+// Set YTDLP_BROWSER=chrome|edge|firefox|brave|safari to control which browser
+// yt-dlp reads. Defaults to 'chrome' on Windows/macOS, 'firefox' on Linux.
 function ytBaseArgs(): string[] {
-  const args = ['--js-runtimes', `node:${process.execPath}`]
+  const args = [
+    '--js-runtimes', `node:${process.execPath}`,
+    // Priority: web_safari + mweb bypass SABR-only + PO Token issues that
+    // plague android/ios clients. Fallback to tv_embedded which still has
+    // working streams. Explicitly drop android/ios (they yield 429 + missing
+    // URLs, which is what the user was hitting).
+    // tv_embedded + tv + web_creator are the 3 clients that DON'T require
+    // a PO Token as of 2026. web/mweb/android/ios all demand PO Tokens now
+    // and yield "Only images available" errors when downloading video.
+    // Order matters: tv_embedded first because it has the widest format
+    // coverage including 1080p, tv as fallback, web_creator as last resort.
+    '--extractor-args', 'youtube:player_client=tv_embedded,tv,web_creator,default',
+    // Impersonate a real Chrome browser at the TLS/HTTP layer. Requires
+    // curl-cffi (user confirmed installed). This is THE fix for 429s from
+    // real-user IPs — YouTube fingerprints requests at the TLS level and
+    // blocks non-browser signatures even when cookies are valid.
+    '--impersonate', 'chrome',
+  ]
+
+  // Prefer explicit cookies file (production/VPS setup)
   const cookies = resolveCookiesFile()
-  if (cookies) args.push('--cookies', cookies)
+  if (cookies) {
+    args.push('--cookies', cookies)
+    return args
+  }
+
+  // Otherwise, in local dev, pull cookies straight from user's browser.
+  // This is the single most effective fix for YouTube blocks on residential
+  // IPs — it uses the user's real signed-in session.
+  // Guard: only when running via `next dev` (NODE_ENV=development). On
+  // Vercel/VPS this env var isn't set, and there's no browser to read from
+  // anyway, so we skip it.
+  if (process.env.NODE_ENV === 'development') {
+    const browser = process.env.YTDLP_BROWSER || (process.platform === 'linux' ? 'firefox' : 'chrome')
+    args.push('--cookies-from-browser', browser)
+  }
+
   return args
 }
 
@@ -69,11 +113,35 @@ function ytBaseArgs(): string[] {
 function ytdlpError(code: number | null, stderr: string): string {
   const raw = stderr.slice(-1500) || 'no output'
   const lower = stderr.toLowerCase()
+  const isDev = process.env.NODE_ENV === 'development'
+
   if (lower.includes('not a bot') || lower.includes('sign in to confirm')) {
     const hasCookies = !!resolveCookiesFile()
+    if (isDev) {
+      return `YouTube requires sign-in. Open Chrome (or Edge) and sign in to youtube.com in that browser, then restart this dev server. yt-dlp will auto-read your browser cookies. Raw: ${raw}`
+    }
     return hasCookies
       ? `YouTube blocked this request even with cookies (exit ${code}). The cookies may be expired or from a different account/region — re-export a fresh cookies.txt while signed in to YouTube and update YTDLP_COOKIES_B64. Raw: ${raw}`
-      : `YouTube is blocking this server's IP ("Sign in to confirm you're not a bot"). Set YTDLP_COOKIES_B64 in your Vercel env to a base64 cookies.txt exported while signed in to YouTube — see DEPLOY-VERCEL-SUPABASE.md. Raw: ${raw}`
+      : `YouTube is blocking this server's IP ("Sign in to confirm you're not a bot"). Set YTDLP_COOKIES_B64 in your env (see DEPLOY-VERCEL-SUPABASE.md), or export cookies.txt locally and set YTDLP_COOKIES_PATH. Raw: ${raw}`
+  }
+  const hasImpersonateWarn = lower.includes('impersonate target') || lower.includes('impersonation')
+  const hasCookiesFromBrowserErr = lower.includes('could not find') && lower.includes('cookies') && lower.includes('browser')
+
+  if (hasCookiesFromBrowserErr) {
+    return `yt-dlp can't read cookies from your browser. Open Chrome (or Edge) and sign in to youtube.com, then close the browser fully (or switch YTDLP_BROWSER=edge in .env.local) and retry. Raw: ${raw}`
+  }
+
+  if (lower.includes('429') || lower.includes('too many requests')) {
+    if (isDev) {
+      return `YouTube rate-limited even with browser cookies (HTTP 429). Try: (1) Open YouTube in Chrome and watch a video for 10 seconds to refresh session tokens, (2) set YTDLP_BROWSER=edge in .env.local if you use Edge instead, (3) wait 5-10 minutes and retry. Raw: ${raw}`
+    }
+    const extra = hasImpersonateWarn
+      ? ' The root cause is the "no impersonate target" warning above — YouTube requires yt-dlp to spoof a real browser via curl-cffi. Install it (Windows PowerShell: `pip install curl-cffi`, then restart the dev server) — that permanently fixes the 429s.'
+      : ' Wait a minute and try again; if it keeps happening, YouTube is throttling your IP.'
+    return `YouTube rate-limited the subtitle downloads (HTTP 429).${extra} Raw: ${raw}`
+  }
+  if (hasImpersonateWarn) {
+    return `yt-dlp needs curl-cffi to impersonate a browser for this video. Install it (Windows PowerShell: \`pip install curl-cffi\`) and restart the dev server. Raw: ${raw}`
   }
   return `yt-dlp failed (exit ${code}): ${raw}`
 }
@@ -110,17 +178,27 @@ export async function downloadSubtitlesAndMetadata(
   fs.mkdirSync(outputDir, { recursive: true })
   fs.mkdirSync(TMP_ROOT, { recursive: true })
 
+  // Whitelist trimmed to two default languages. Any wider set risks 429s from
+  // YouTube (they throttle the timedtext endpoint aggressively per IP), and
+  // extra languages can always be fetched on demand via /retranscript
+  // (downloadSubtitleTrack below). If a user wants more baked in up front,
+  // set YTDLP_SUB_LANGS in the env, e.g. "id,en,ms,es".
+  const SUB_LANG_WHITELIST = process.env.YTDLP_SUB_LANGS || 'id,en'
+
   const args = [
     url,
     '--skip-download',
     '--write-info-json',
     '--write-subs',
     '--write-auto-subs',
-    '--sub-langs', 'all',
+    '--sub-langs', SUB_LANG_WHITELIST,
     '--sub-format', 'vtt',
     ...ytBaseArgs(),
-    '--extractor-retries', '3',
-    '--sleep-requests', '1',
+    '--extractor-retries', '5',
+    '--fragment-retries', '5',
+    '--retry-sleep', 'exp=2:60',   // exponential backoff: 2s, 4s, 8s ... capped 60s
+    '--sleep-requests', '2',
+    '--sleep-subtitles', '2',
     '--no-playlist',
     '--output', path.join(outputDir, 'source.%(ext)s'),
   ]
@@ -254,9 +332,15 @@ export async function downloadVideoSection(
   const outputPath = path.join(outputDir, outputFilename)
   const sectionArg = `*${start}-${end}`
 
+  // tv_embedded / tv clients only expose separate video+audio streams (no
+  // progressive/pre-muxed mp4), so we need to accept that format shape.
+  // "bv*+ba/b" tells yt-dlp: pick best video, add best audio, or fallback
+  // to any single "best" combined stream if the site has one. This works
+  // across every client we might land on.
   const args = [
     url,
-    '--format', 'best[height<=720][ext=mp4]/best',
+    '--format', 'bv*[height<=540]+ba/bv*[height<=720]+ba/best[height<=720]/best',
+    '--merge-output-format', 'mp4',
     '--download-sections', sectionArg,
     ...ytBaseArgs(),
     '--extractor-retries', '3',
@@ -274,17 +358,81 @@ export async function downloadVideoSection(
   return outputPath
 }
 
+// URL prefix marker for uploaded (not-from-YouTube) sources. When a job's
+// url starts with this, ensureVideoSegment routes to the R2 downloader
+// instead of yt-dlp. See app/api/upload/route.ts for where this is set.
+export const UPLOAD_URL_PREFIX = 'upload://'
+
+/**
+ * Fetches an uploaded source video from R2 to /tmp (once per instance), then
+ * trims the requested [start, end] slice via ffmpeg. Mirrors the buffered-
+ * cache pattern of ensureVideoSegment(youtube), so re-requests of the same
+ * clip are cheap.
+ */
+async function ensureUploadedSegment(
+  jobId: string,
+  sourceStoragePath: string,
+  start: number,
+  end: number,
+): Promise<string> {
+  const { createSignedUrl } = await import('./storage')
+  const outputDir = path.join(TMP_DIR, jobId)
+  fs.mkdirSync(outputDir, { recursive: true })
+  const exactName = `segment_${Math.round(start * 10)}_${Math.round(end * 10)}.mp4`
+  const exactPath = path.join(outputDir, exactName)
+  if (fs.existsSync(exactPath)) return exactPath
+
+  // Cache the full source file locally so subsequent seeks are free.
+  const sourceLocal = path.join(outputDir, 'source' + path.extname(sourceStoragePath))
+  if (!fs.existsSync(sourceLocal)) {
+    const url = await createSignedUrl(sourceStoragePath, 300)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`R2 fetch failed for uploaded source (${res.status})`)
+    const buf = Buffer.from(await res.arrayBuffer())
+    fs.writeFileSync(sourceLocal, buf)
+  }
+
+  const duration = end - start
+  await runFFmpeg([
+    '-y',
+    '-ss', String(start),
+    '-i', sourceLocal,
+    '-t', String(duration),
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-c:a', 'aac',
+    exactPath,
+  ])
+  return exactPath
+}
+
 /**
  * Ensures a specific segment of video is downloaded and trimmed locally.
  * Caches both the buffered raw section and the exact trimmed result for
  * the lifetime of the current /tmp (see TMP_ROOT comment above).
+ *
+ * Handles two source types:
+ *   1. YouTube URLs -- yt-dlp downloads the requested range with a small
+ *      buffer, then ffmpeg trims to the exact times.
+ *   2. Uploaded videos (url = "upload://<something>") -- downloads the
+ *      whole source from R2 once, then ffmpeg trims each segment.
+ * The caller is expected to pass job.source_storage_path when the url has
+ * the upload:// prefix.
  */
 export async function ensureVideoSegment(
   jobId: string,
   url: string,
   start: number,
-  end: number
+  end: number,
+  sourceStoragePath?: string,
 ): Promise<string> {
+  if (url.startsWith(UPLOAD_URL_PREFIX)) {
+    if (!sourceStoragePath) {
+      throw new Error('uploaded video has no source_storage_path on job row — cannot render segment')
+    }
+    return ensureUploadedSegment(jobId, sourceStoragePath, start, end)
+  }
+
   const outputDir = path.join(TMP_DIR, jobId)
   const exactName = `segment_${Math.round(start * 10)}_${Math.round(end * 10)}.mp4`
   const exactPath = path.join(outputDir, exactName)

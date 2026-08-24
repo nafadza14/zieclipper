@@ -37,6 +37,19 @@ const KEYWORD_EMOJI: Array<[string[], string]> = [
 
 // Common words that shouldn't count when matching (so a chunk about "the money"
 // still matches "money").
+import type { SubtitleChunk, EmojiSettings } from '@/store/types'
+
+// Resolves the emoji to draw on a given chunk, respecting the same rules the
+// preview uses: per-chunk override wins; otherwise, if autoGenerate is on,
+// pick from the keyword map; otherwise nothing.
+export function emojiForChunk(chunk: SubtitleChunk, emoji: EmojiSettings): string | null {
+  if (!emoji.enabled) return null
+  const override = emoji.overrides?.[chunk.id]
+  if (override) return override
+  if (emoji.autoGenerate) return autoEmojiForText(chunk.text)
+  return null
+}
+
 export function autoEmojiForText(text: string): string | null {
   if (!text) return null
   const words = text.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/\s+/).filter(Boolean)

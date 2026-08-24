@@ -66,6 +66,15 @@ export type EmojiAnimation = 'none' | 'bounce' | 'pop' | 'spin'
 export type CropBackground = 'blur' | 'black' | 'color'
 export type VideoFormat = '9:16' | '1:1' | '16:9'
 
+// One face-tracking sample: at time `t` seconds (clip-local), the primary
+// speaker's face was horizontally at fraction `x` (0=far left, 1=far right).
+// Produced by server/face-tracking.ts and consumed by both the ffmpeg export
+// (via lib/crop-expression.ts) and the live preview.
+export interface FaceKeyframe {
+  t: number
+  x: number
+}
+
 export interface SubtitleStyle {
   preset: string
   transition: SubtitleTransition
@@ -111,6 +120,7 @@ export interface CropSettings {
   style: 'fill' | 'fit'
   startOffset: number
   endOffset: number
+  autoTrack?: boolean       // if true, exporter runs face tracking and overrides x with a dynamic crop
 }
 
 export interface TrimSettings {

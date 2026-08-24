@@ -95,7 +95,7 @@ function AuthContent() {
       <div className="relative z-20 max-w-[400px] w-full px-4">
         <div className="bg-neutral-950/85 backdrop-blur-md border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl">
           <div className="text-center space-y-1">
-            <h2 className="text-xl font-semibold text-white">zieclipper account</h2>
+            <h2 className="text-xl font-semibold text-white">zieclip account</h2>
             <p className="text-xs text-neutral-400">
               {mode === 'signup'
                 ? 'create a new account to save your clips'

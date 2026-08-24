@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
     const { messages, model, temperature, max_tokens } = body;
 
-    const apiKey = process.env.SUMOPOD_API_KEY || 'sk-LH238LuYeE77a-8IVxxQdg';
+    const apiKey = process.env.SUMOPOD_API_KEY || '';
 
     const requestPayload = {
       model: model || 'gpt-4o-mini',

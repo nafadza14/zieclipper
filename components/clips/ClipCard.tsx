@@ -1,5 +1,6 @@
 'use client'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import type { ClipSuggestion } from '@/store/types'
 import { formatDuration } from '@/lib/youtube'
 
@@ -23,25 +24,34 @@ function ScorePill({ score }: { score: number }) {
   )
 }
 
-interface Props { clip: ClipSuggestion; index: number; jobId: string }
+interface Props { clip: ClipSuggestion; index: number; jobId: string; priority?: boolean }
 
-export function ClipCard({ clip, index, jobId }: Props) {
+export function ClipCard({ clip, index, jobId, priority = false }: Props) {
   const router = useRouter()
   const duration = clip.end_time - clip.start_time
   const typeStyle = TYPE_STYLES[clip.clip_type] || TYPE_STYLES.other
+  const [imgLoaded, setImgLoaded] = useState(false)
 
   return (
     <div
       className="group bg-[#0d0d16] border border-white/[0.07] rounded-2xl overflow-hidden hover:border-white/20 hover:shadow-lg hover:shadow-white/5 transition-all duration-200 cursor-pointer"
       onClick={() => router.push(`/editor/${jobId}/${index}`)}
     >
-      {/* Thumbnail */}
-      <div className="relative aspect-video bg-[#07070b] overflow-hidden">
+      {/* Thumbnail — 9:16 portrait, face-aware crop (server-side).
+          `priority` cards start loading immediately; the rest lazy-load as
+          they scroll into view. Skeleton pulse shows until first paint so
+          the card doesn't look broken on a slow connection. */}
+      <div className="relative bg-[#07070b] overflow-hidden" style={{ aspectRatio: '9 / 16' }}>
+        {!imgLoaded && (
+          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-white/[0.04] to-white/[0.02]" />
+        )}
         <img
           src={`/api/thumbnail/${jobId}/${index}`}
           alt={clip.title}
-          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
-          loading="lazy"
+          className={`w-full h-full object-cover group-hover:scale-[1.03] transition-all duration-300 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
+          onLoad={() => setImgLoaded(true)}
         />
         <ScorePill score={clip.score} />
         <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm rounded-md px-2 py-0.5 text-[11px] text-white/90 font-medium">

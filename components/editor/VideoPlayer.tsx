@@ -1,8 +1,9 @@
 'use client'
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react'
 import { useVideoSync } from '@/hooks/useVideoSync'
-import type { SubtitleChunk, EditorSettings } from '@/store/types'
+import type { SubtitleChunk, EditorSettings, FaceKeyframe } from '@/store/types'
 import { getFormatCss, cropWidthRatio } from '@/lib/formats'
+import { xAtTime } from '@/lib/tracking-interp'
 
 interface Props {
   jobId: string
@@ -10,14 +11,71 @@ interface Props {
   clipEnd: number
   chunks: SubtitleChunk[]
   settings: EditorSettings
+  // Optional face-tracking keyframes. When provided AND crop.autoTrack is
+  // on AND we're in fill mode with a non-16:9 target, the preview's
+  // object-position animates along the interpolated x per playhead time --
+  // matching what ffmpeg's dynamic crop expression will do at export time.
+  trackingKeyframes?: FaceKeyframe[] | null
 }
 
-export function VideoPlayer({ jobId, clipStart, clipEnd, chunks, settings }: Props) {
+// Imperative handle: the Timeline component (below the preview) needs to
+// seek the <video> to a specific clip-local time when the user clicks a
+// chunk. Rather than lifting a full playback controller into the parent
+// store, expose a tiny ref API so the parent can just call
+// playerRef.current?.seekToClipTime(t).
+export interface VideoPlayerHandle {
+  seekToClipTime: (secondsFromClipStart: number) => void
+  play: () => void
+  pause: () => void
+}
+
+export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
+  { jobId, clipStart, clipEnd, chunks, settings, trackingKeyframes },
+  ref,
+) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const bgVideoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // Playhead-driven x fraction for face tracking. Updated per rAF while
+  // playback is running so the crop follows the speaker in real time.
+  const [trackingX, setTrackingX] = useState<number | null>(null)
 
   useVideoSync(videoRef, canvasRef, chunks, settings, clipStart)
+
+  const useTracking =
+    settings.crop.autoTrack &&
+    (settings.crop.style || 'fill') === 'fill' &&
+    settings.videoFormat !== '16:9' &&
+    Array.isArray(trackingKeyframes) &&
+    trackingKeyframes.length > 0
+
+  // rAF loop for real-time crop follow. Sampling once per animation frame
+  // is smooth to the eye and cheap (interpolation is O(kfs) which is ~8).
+  useEffect(() => {
+    if (!useTracking) { setTrackingX(null); return }
+    let raf = 0
+    const tick = () => {
+      const v = videoRef.current
+      if (v && trackingKeyframes) {
+        setTrackingX(xAtTime(trackingKeyframes, v.currentTime))
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [useTracking, trackingKeyframes])
+
+  useImperativeHandle(ref, () => ({
+    seekToClipTime(secondsFromClipStart: number) {
+      const v = videoRef.current
+      if (!v) return
+      // clamp to valid range so a stale click near the very end can't NaN out
+      const clipDur = Math.max(0.1, clipEnd - clipStart)
+      v.currentTime = Math.max(0, Math.min(clipDur - 0.05, secondsFromClipStart))
+    },
+    play() { videoRef.current?.play().catch(() => {}) },
+    pause() { videoRef.current?.pause() },
+  }), [clipStart, clipEnd])
 
   const src = `/api/video/${jobId}?start=${clipStart}&end=${clipEnd}`
   const { crop } = settings
@@ -26,9 +84,12 @@ export function VideoPlayer({ jobId, clipStart, clipEnd, chunks, settings }: Pro
 
   // Calculate object-position for cover mode. When the target is 16:9 the whole
   // width is visible (ratio == 1), so there's no horizontal pan and we avoid a
-  // divide-by-zero by centering.
+  // divide-by-zero by centering. When face tracking is on, override the static
+  // crop.x with the live-interpolated trackingX so the preview follows the
+  // speaker exactly like the exported MP4 will.
+  const effectiveX = useTracking && trackingX !== null ? trackingX : crop.x
   const objectPosition = cropStyle === 'fill' && CROP_WIDTH_RATIO < 1
-    ? `${(crop.x / (1 - CROP_WIDTH_RATIO)) * 100}% center`
+    ? `${(effectiveX / (1 - CROP_WIDTH_RATIO)) * 100}% center`
     : 'center center'
 
   // Sync background video with main video if fit mode with blur is active
@@ -119,4 +180,4 @@ export function VideoPlayer({ jobId, clipStart, clipEnd, chunks, settings }: Pro
       />
     </div>
   )
-}
+})

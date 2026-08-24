@@ -50,6 +50,40 @@ export function runFFmpeg(
   })
 }
 
+// Real video width/height from ffprobe. Used by the export-time face
+// tracking to build a crop-x expression clamped to the actual source (the
+// tracking builder needs to know source pixels to convert 0..1 fractions
+// into pixel offsets). Falls back to 1280x720 on failure -- that's the
+// nominal size of yt-dlp's `best[height<=720]` format we ask for.
+export function probeVideoDimensions(filePath: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const { ffprobe } = getBinaries()
+    const proc = spawn(ffprobe, [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height',
+      filePath,
+    ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+
+    let out = ''
+    proc.stdout.on('data', (d: Buffer) => { out += d.toString() })
+    proc.on('close', () => {
+      try {
+        const json = JSON.parse(out)
+        const s = json?.streams?.[0]
+        const w = Number(s?.width), h = Number(s?.height)
+        if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+          resolve({ width: w, height: h })
+          return
+        }
+      } catch {}
+      resolve({ width: 1280, height: 720 })
+    })
+    proc.on('error', () => resolve({ width: 1280, height: 720 }))
+  })
+}
+
 export function probeVideoDuration(filePath: string): Promise<number> {
   return new Promise((resolve) => {
     const { ffprobe } = getBinaries()
