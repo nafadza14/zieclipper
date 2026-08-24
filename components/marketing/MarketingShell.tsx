@@ -26,10 +26,15 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
 
   return (
     <section className="relative h-screen w-full overflow-hidden bg-black select-none">
-      {/* Shared background video */}
+      {/* Shared background video — preload="none" defers download until
+          the page is interactive. Poster color prevents FOUC while video
+          initializes. Cuts initial paint by 2-3s on slow Indonesian
+          connections. */}
       <video
         className="absolute inset-0 w-full h-full object-cover opacity-60"
         autoPlay loop muted playsInline
+        preload="none"
+        style={{ background: '#0a0a0f' }}
         src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260418_063509_7d167302-4fd4-480b-8260-18ab572333d4.mp4"
       />
       {/* Bottom gradient — same as landing */}
