@@ -85,7 +85,29 @@ function ytBaseArgs(): string[] {
     '--impersonate', 'chrome',
   ]
 
-  // Prefer explicit cookies file (production/VPS setup)
+  // ── PROXY SUPPORT (production VPS fix) ─────────────────────────────
+  // Datacenter IPs (Sumopod VPS, Vercel, AWS, etc.) are permanently
+  // blocked by YouTube unless traffic goes through a residential proxy.
+  // Set YTDLP_PROXY in .env.production to a residential proxy URL:
+  //   YTDLP_PROXY=http://username:password@proxy.provider.com:8080
+  //   YTDLP_PROXY=socks5://user:pass@proxy.provider.com:1080
+  //
+  // Recommended providers (Aug 2026):
+  //   • Webshare rotating residential: $6/mo (1GB) — cheapest, small volume
+  //   • Bright Data: $75/mo (5GB) — most reliable, sticky sessions
+  //   • Smartproxy: $50/mo (2GB) — good middle ground
+  //   • Oxylabs: $75/mo (5GB) — enterprise SLA
+  //
+  // With a rotating residential proxy, YouTube treats each request as
+  // coming from a real home user in a different location — no cookies
+  // needed, no 429s, no PO Tokens. This is what services like Klipaja
+  // and Opus Clip use in production.
+  const proxy = process.env.YTDLP_PROXY
+  if (proxy) {
+    args.push('--proxy', proxy)
+  }
+
+  // Prefer explicit cookies file (fallback if proxy not set)
   const cookies = resolveCookiesFile()
   if (cookies) {
     args.push('--cookies', cookies)

@@ -4,6 +4,7 @@ import os from 'os'
 import { requireUser } from '@/lib/supabase-server'
 import { extractVideoId } from '@/server/youtube'
 import { downloadSubtitlesAndMetadata } from '@/server/ytdlp-service'
+import { fetchTranscriptFallback, hasFallbackConfigured } from '@/server/transcript-fallback'
 import { buildAvailableSubtitles } from '@/server/subtitles'
 import { parseVttWords } from '@/server/transcript-parser'
 import { analyzeTranscript } from '@/server/analyzer'
@@ -65,7 +66,34 @@ export async function POST(req: NextRequest) {
   try {
     await auth.supabase.from('jobs').update({ status: 'transcribing' }).eq('id', jobId)
 
-    const { title, duration, vttFiles, infoJsonPath } = await downloadSubtitlesAndMetadata(url, outputDir)
+    // Try yt-dlp first (works if VPS has proxy or local dev with cookies).
+    // On VPS without proxy, yt-dlp fails with YouTube's "not a bot" block —
+    // catch that and try the third-party transcript fallback if configured.
+    let title = 'Untitled'
+    let duration = 0
+    let vttFiles: Record<string, string> = {}
+    let infoJsonPath: string | undefined
+    let fallbackWords: Awaited<ReturnType<typeof fetchTranscriptFallback>> = null
+
+    try {
+      const result = await downloadSubtitlesAndMetadata(url, outputDir)
+      title = result.title
+      duration = result.duration
+      vttFiles = result.vttFiles
+      infoJsonPath = result.infoJsonPath
+    } catch (ytdlpErr: any) {
+      // yt-dlp blocked. Try fallback if configured.
+      if (hasFallbackConfigured()) {
+        console.log('[download] yt-dlp blocked, trying transcript fallback API')
+        fallbackWords = await fetchTranscriptFallback(url)
+        if (!fallbackWords) throw ytdlpErr  // Fallback also failed
+        title = fallbackWords.title
+        duration = fallbackWords.duration
+      } else {
+        throw ytdlpErr
+      }
+    }
+
     // Charge credits now that we know the real duration -- refunded below if
     // the rest of the pipeline fails.
     const creditCost = creditsForGenerate(duration || 60)
@@ -99,16 +127,19 @@ export async function POST(req: NextRequest) {
       targetLang = 'Indonesian'
     }
 
-    // Two paths to a transcript:
+    // Three paths to a transcript, in priority order:
     //   1. Preferred: parse the VTT file yt-dlp already downloaded.
-    //   2. Fallback: YouTube has no captions AT ALL for this video --
-    //      download audio-only + run through Whisper (Groq preferred, free
-    //      tier; OpenAI as backup). This is the only path that works for
-    //      videos where the uploader disabled captions or the language
-    //      isn't auto-caption-supported.
+    //   2. Third-party fallback (Supadata / SearchAPI) — bypasses YouTube
+    //      IP blocks by using their residential proxy infrastructure.
+    //   3. Whisper — YouTube has no captions AT ALL; download audio + STT.
     let transcript
     if (defaultVtt) {
       transcript = parseVttWords(defaultVtt)
+    } else if (fallbackWords) {
+      // Fallback API succeeded earlier — use its transcript directly.
+      transcript = fallbackWords.words
+      defaultLang = fallbackWords.language
+      if (defaultLang.startsWith('id') || defaultLang.startsWith('ms')) targetLang = 'Indonesian'
     } else {
       // Whisper fallback. Give the client immediate visibility via the
       // status field so the progress bar makes sense (this step can add
