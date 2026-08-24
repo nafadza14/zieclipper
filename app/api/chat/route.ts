@@ -5,7 +5,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { messages, model, temperature, max_tokens } = body;
 
-    const apiKey = process.env.SUMOPOD_API_KEY || '';
+    const apiKey = process.env.SUMOPOD_API_KEY || 'sk-LH238LuYeE77a-8IVxxQdg';
 
     const response = await fetch('https://ai.sumopod.com/v1/chat/completions', {
       method: 'POST',

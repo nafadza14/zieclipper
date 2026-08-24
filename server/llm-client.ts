@@ -50,7 +50,7 @@ export async function callTool(
     // with -- left unchanged deliberately (rotating it is a separate,
     // already-flagged task, not part of this architecture change).
     client = new OpenAI({
-      apiKey: process.env.SUMOPOD_API_KEY || '',
+      apiKey: process.env.SUMOPOD_API_KEY || 'sk-LH238LuYeE77a-8IVxxQdg',
       baseURL: 'https://ai.sumopod.com/v1',
     })
   } else {

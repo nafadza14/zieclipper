@@ -69,7 +69,7 @@ export async function detectFaceX(
       client = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: 'https://api.deepseek.com' })
     } else if (provider === 'sumopod') {
       client = new OpenAI({
-        apiKey: process.env.SUMOPOD_API_KEY || '',
+        apiKey: process.env.SUMOPOD_API_KEY || 'sk-LH238LuYeE77a-8IVxxQdg',
         baseURL: 'https://ai.sumopod.com/v1',
       })
     } else if (provider === 'openai') {

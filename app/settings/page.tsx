@@ -73,8 +73,19 @@ export default function SettingsPage() {
       body: JSON.stringify({ amount: topupAmount }),
     })
     const d = await res.json().catch(() => ({}))
-    if (!res.ok) setTopupError(d.error || 'top-up gagal')
-    else await loadAll()
+    if (!res.ok) {
+      setTopupError(d.error || 'top-up gagal')
+      setTopupBusy(false)
+      return
+    }
+    // Sumopod returns paymentUrl — redirect user to QRIS/e-wallet page.
+    // On success return, they land back at /settings?topup=success&orderId=...
+    if (d.paymentUrl) {
+      window.location.href = d.paymentUrl
+      return
+    }
+    // Legacy dummy flow (no paymentUrl) — reload balance
+    await loadAll()
     setTopupBusy(false)
   }
 
