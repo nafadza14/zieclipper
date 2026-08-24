@@ -47,8 +47,9 @@ const nextConfig: NextConfig = {
     // Video uploads on /api/upload need a bigger body cap than the default.
     // 200MB matches the server-side MAX_UPLOAD_BYTES in that route.
     serverActions: { bodySizeLimit: '200mb' },
-    // Tree-shake unused CSS aggressively (Turbopack default is conservative).
-    optimizeCss: true,
+    // NOTE: optimizeCss removed — required "critters" package not in
+    // dependencies, and enabling it caused runtime failures. Nginx gzip
+    // (in deploy/nginx-zieclip.conf) already handles compression well.
   },
   // Vercel's Output File Tracing only follows require()/import statements
   // to decide what to include in a function's deployment bundle -- it has
