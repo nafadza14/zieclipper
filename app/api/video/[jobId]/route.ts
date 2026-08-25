@@ -46,3 +46,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ jobI
     return NextResponse.json({ error: `Failed to fetch segment: ${err.message}` }, { status: 500 })
   }
 }
+
+// HEAD request: same cache-warming pipeline as GET, but returns empty body.
+// Used by ClipCard hover prefetch to warm the segment in R2 before user clicks.
+export async function HEAD(req: NextRequest, ctx: { params: Promise<{ jobId: string }> }) {
+  try {
+    const res = await GET(req, ctx)
+    // Strip body — HEAD should return just headers
+    return new NextResponse(null, {
+      status: res.status,
+      headers: res.headers,
+    })
+  } catch {
+    return new NextResponse(null, { status: 500 })
+  }
+}

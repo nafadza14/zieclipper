@@ -31,6 +31,21 @@ export default function ClipsPage({ params }: { params: Promise<{ jobId: string 
           setJob(j)
           setSelectedLang(j.activeSubtitleLang ?? j.availableSubtitles?.[0]?.code ?? '')
           setLoading(false)
+          // Background: warm the top 3 clip segments in R2 so opening any
+          // of them in the editor feels instant. HEAD requests are async
+          // fire-and-forget — server does the yt-dlp download once, caches
+          // to R2, and future requests redirect straight to signed URL.
+          if (j.clips) {
+            const topClips = [...j.clips]
+              .map((c, i) => ({ ...c, _origIdx: i }))
+              .sort((a: any, b: any) => (b.score || 0) - (a.score || 0))
+              .slice(0, 3)
+            topClips.forEach((c: any) => {
+              fetch(`/api/video/${jobId}?start=${c.start_time}&end=${c.end_time}`, {
+                method: 'HEAD',
+              }).catch(() => {})
+            })
+          }
         })
         .catch((e) => { setError(e.message); setLoading(false) })
     }

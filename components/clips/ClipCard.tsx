@@ -31,11 +31,26 @@ export function ClipCard({ clip, index, jobId, priority = false }: Props) {
   const duration = clip.end_time - clip.start_time
   const typeStyle = TYPE_STYLES[clip.clip_type] || TYPE_STYLES.other
   const [imgLoaded, setImgLoaded] = useState(false)
+  const [prefetched, setPrefetched] = useState(false)
+
+  // Prefetch on hover: warm up both the Next.js route AND the video segment
+  // on our backend, so clicking into the editor feels instant. Fires once
+  // per card lifetime — subsequent hovers are no-op.
+  const handleHover = () => {
+    if (prefetched) return
+    setPrefetched(true)
+    router.prefetch(`/editor/${jobId}/${index}`)
+    // Fire-and-forget: warm video segment cache in R2 without blocking UI
+    fetch(`/api/video/${jobId}?start=${clip.start_time}&end=${clip.end_time}`, {
+      method: 'HEAD',
+    }).catch(() => {})
+  }
 
   return (
     <div
       className="group bg-[#0d0d16] border border-white/[0.07] rounded-2xl overflow-hidden hover:border-white/20 hover:shadow-lg hover:shadow-white/5 transition-all duration-200 cursor-pointer"
       onClick={() => router.push(`/editor/${jobId}/${index}`)}
+      onMouseEnter={handleHover}
     >
       {/* Thumbnail — 9:16 portrait, face-aware crop (server-side).
           `priority` cards start loading immediately; the rest lazy-load as

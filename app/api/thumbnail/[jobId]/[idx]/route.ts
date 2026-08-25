@@ -3,10 +3,10 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import { requireUser } from '@/lib/supabase-server'
-import { ensureVideoSegment } from '@/server/ytdlp-service'
+import { ensureVideoSegment, UPLOAD_URL_PREFIX } from '@/server/ytdlp-service'
 import { runFFmpeg, probeVideoDimensions } from '@/server/ffmpeg-processor'
 import { uploadFile, createSignedUrl, fileExistsInStorage, mediaPath } from '@/server/storage'
-import { detectFaceX } from '@/server/vision-client'
+import { extractVideoId } from '@/server/youtube'
 
 // Output size: 540x960 is small enough that thumbnails load fast on any
 // connection, sharp enough to look crisp at card size (usually ~250-320
@@ -15,7 +15,7 @@ import { detectFaceX } from '@/server/vision-client'
 const THUMB_W = 540
 const THUMB_H = 960
 
-export const maxDuration = 120
+export const maxDuration = 60
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ jobId: string; idx: string }> }) {
   const { jobId, idx } = await params
@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ job
 
   const { data: job } = await auth.supabase
     .from('jobs')
-    .select('id, url, clips, source_storage_path, provider, model')
+    .select('id, url, clips, source_storage_path')
     .eq('id', jobId)
     .eq('user_id', auth.user.id)
     .maybeSingle()
@@ -34,26 +34,34 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ job
   const clip = job.clips[clipIndex]
   if (!clip) return NextResponse.json({ error: 'Clip not found' }, { status: 404 })
 
-  // Bump the storage key when the thumbnail pipeline changes shape (aspect,
-  // resolution, face-crop). Cached thumbnails from the old 16:9 pipeline
-  // stay in R2 but aren't reused -- the new key `thumb_v2_...` forces a
-  // regeneration exactly once per (job, clip).
-  const storagePath = mediaPath(auth.user.id, jobId, `thumb_v2_${clipIndex}.jpg`)
+  // ── FAST PATH: YouTube's own thumbnail (0ms, no ffmpeg, no vision LLM) ──
+  // For YouTube URLs, redirect straight to YouTube's own hqdefault image.
+  // This is INSTANT (no download, no processing) and looks great as a
+  // preview card. The user can still generate the "true" 9:16 face-aware
+  // thumbnail on-demand by opening the editor.
+  if (!job.url.startsWith(UPLOAD_URL_PREFIX)) {
+    const videoId = extractVideoId(job.url)
+    if (videoId) {
+      const ytThumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+      const res = NextResponse.redirect(ytThumb, 307)
+      res.headers.set('Cache-Control', 'public, max-age=86400')
+      return res
+    }
+  }
+
+  // ── SLOW PATH: uploaded videos need real ffmpeg extraction ──
+  // Cache aggressively — once generated, thumbnail persists in R2 forever.
+  const storagePath = mediaPath(auth.user.id, jobId, `thumb_v3_${clipIndex}.jpg`)
 
   try {
     if (!(await fileExistsInStorage(storagePath))) {
-      await generateFaceAwareThumbnail(
+      await generateFastThumbnail(
         jobId, clip, clipIndex,
         job.url, job.source_storage_path ?? undefined,
-        (job.provider as string) || 'sumopod',
-        (job.model as string) || 'gpt-4o-mini',
         storagePath,
       )
     }
     const signedUrl = await createSignedUrl(storagePath, 3600)
-    // Cache the redirect itself on the browser for 30 min so a page revisit
-    // in the same session doesn't even hit our server for thumbnails.
-    // R2 signed URL TTL is 1h, comfortably longer than this browser cache.
     const res = NextResponse.redirect(signedUrl, 307)
     res.headers.set('Cache-Control', 'private, max-age=1800')
     return res
@@ -62,62 +70,38 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ job
   }
 }
 
-// Face-aware thumbnail generator. Three stages:
-//   1) Extract one high-quality frame from a short buffered slice.
-//   2) Ask the vision model where the primary face is (x fraction 0..1).
-//   3) Crop the frame to 9:16 centered on the face, scale to THUMB_W×THUMB_H,
-//      encode as high-quality JPEG.
-// Fallback path: any failure at stages 2 or 3 falls back to a centered crop
-// so we still return a valid thumbnail rather than 500-ing the whole card.
-async function generateFaceAwareThumbnail(
+/**
+ * Fast thumbnail generator — no vision LLM, no face detection.
+ * Simple centered crop from a single ffmpeg frame extract.
+ * Total time: ~2s for uploaded videos (vs 10-20s with the old face-aware pipeline).
+ */
+async function generateFastThumbnail(
   jobId: string,
   clip: { start_time: number; end_time: number },
   clipIndex: number,
   url: string,
   sourceStoragePath: string | undefined,
-  provider: string,
-  model: string,
   storagePath: string,
 ) {
-  // Pick a timestamp ~10% into the clip -- past any transition frame at
-  // the very start, but still representative of the clip.
+  // Pick a timestamp ~10% into the clip -- past any transition frame.
   const timestamp = clip.start_time + (clip.end_time - clip.start_time) * 0.1
-
-  // 2s slice is enough for a stable single-frame extract; ensureVideoSegment
-  // caches the file so subsequent thumbnails from the same clip window skip
-  // the download entirely.
   const segmentPath = await ensureVideoSegment(jobId, url, timestamp, timestamp + 2, sourceStoragePath)
 
   const tmpDir = path.join(/* turbopackIgnore: true */ os.tmpdir(), 'zieclipper', 'jobs', jobId)
   fs.mkdirSync(tmpDir, { recursive: true })
-  const framePath = path.join(tmpDir, `thumb_v2_${clipIndex}_raw.jpg`)
-  const outPath = path.join(tmpDir, `thumb_v2_${clipIndex}.jpg`)
+  const outPath = path.join(tmpDir, `thumb_v3_${clipIndex}.jpg`)
 
-  // Stage 1: raw frame. Keep source resolution -- we'll crop from this.
-  await runFFmpeg(['-ss', '0.5', '-i', segmentPath, '-vframes', '1', '-q:v', '2', '-y', framePath])
-
-  // Stage 2: ask vision model where the face is. detectFaceX already handles
-  // its own errors and returns 0.5 (center) on any failure, so no try/catch
-  // needed here.
-  const faceX = await detectFaceX(framePath, provider, model)
-
-  // Stage 3: figure out crop math from actual frame dims (not assumed 1280x720),
-  // then crop + scale + encode.
-  const { width, height } = await probeVideoDimensions(framePath)
-  const cropW = Math.min(width, Math.round((height * THUMB_W) / THUMB_H / 2) * 2)
-  const maxX = Math.max(0, width - cropW)
-  const cropX = Math.round(Math.max(0, Math.min(maxX, maxX * faceX)))
-
+  // Single ffmpeg pass: extract frame + center-crop to 9:16 + scale + encode
   await runFFmpeg([
-    '-i', framePath,
-    '-vf', `crop=${cropW}:${height}:${cropX}:0,scale=${THUMB_W}:${THUMB_H}:flags=lanczos`,
-    '-q:v', '2',
+    '-ss', String(timestamp + 0.5),
+    '-i', segmentPath,
+    '-vframes', '1',
+    '-vf', `crop='if(gt(iw*${THUMB_H}/${THUMB_W},ih),ih*${THUMB_W}/${THUMB_H},iw)':'if(gt(iw*${THUMB_H}/${THUMB_W},ih),ih,iw*${THUMB_H}/${THUMB_W})',scale=${THUMB_W}:${THUMB_H}:flags=lanczos`,
+    '-q:v', '3',
     '-y',
     outPath,
   ])
 
   await uploadFile(storagePath, outPath, 'image/jpeg')
-
-  // Cleanup best-effort — /tmp gets wiped anyway.
-  try { fs.unlinkSync(framePath) } catch {}
+  try { fs.unlinkSync(outPath) } catch {}
 }
